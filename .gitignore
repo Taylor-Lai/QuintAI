@@ -1,0 +1,123 @@
+# ====================
+# 1. Python 编译文件
+# ====================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# ====================
+# 2. 虚拟环境
+# ====================
+venv/
+env/
+.venv/
+ENV/
+.ENV/
+.conda/
+
+# ====================
+# 3. 密钥和敏感配置
+# ====================
+.env
+.env.*
+*.key
+*.pem
+*.crt
+secrets.json
+config.private.json
+
+# ====================
+# 4. IDE 和工具配置
+# ====================
+# VS Code
+.vscode/
+*.code-workspace
+
+# PyCharm/IntelliJ
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Claude Code
+.claude/
+CLAUDE.md
+
+# 其他编辑器
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+.settings/
+
+# ====================
+# 5. 操作系统文件
+# ====================
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+.fuse_hidden*
+
+# ====================
+# 6. 项目特定文件
+# ====================
+# 日志
+*.log
+logs/
+log/
+
+# 临时文件
+tmp/
+temp/
+.tmp/
+
+# 上传文件
+uploads/
+upload/
+files/
+
+# 测试数据
+test_data/
+testdata/
+
+# 数据库文件
+*.db
+*.sqlite
+*.sqlite3
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+
+# ====================
+# 7. 竞赛特定（可选）
+# ====================
+local_test/
+backup/
+*.bak
