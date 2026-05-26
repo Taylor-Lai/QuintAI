@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import traceback
+from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
@@ -17,6 +19,29 @@ def _schema_classes():
     except ImportError:  # pragma: no cover - compatibility for tests importing engine directly
         from engine.schemas import Mod3_FusionOutput
     return Mod3_FusionOutput
+
+
+def _write_fill_run_report(work_dir: Path, task_id: str, result) -> Path:
+    report_dir = work_dir / "outputs"
+    report_dir.mkdir(exist_ok=True)
+    report_path = report_dir / f"{task_id}-fill-run-report.json"
+    checks = [check.to_dict() for check in result.verification_report.checks]
+    payload = {
+        "schema_version": "1.0",
+        "task_id": task_id,
+        "created_at": datetime.now().isoformat(timespec="seconds"),
+        "output_path": result.fill_result.output_path,
+        "verification_status": result.verification_report.status,
+        "verification_summary": result.verification_report.summary,
+        "checks": checks,
+        "written_cell_count": len(result.fill_result.written_cells),
+        "non_empty_written_cell_count": sum(1 for cell in result.fill_result.written_cells if cell.value not in (None, "", "未找到")),
+        "traceable_cell_count": sum(1 for cell in result.fill_result.written_cells if cell.evidence_ids),
+        "debug": result.debug,
+        "warnings": result.fill_result.warnings,
+    }
+    report_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+    return report_path
 
 
 def handle_table_filling(
@@ -55,12 +80,14 @@ def handle_table_filling(
             progress_callback(input_data.task_id, "processing", "7大智能体开始协同流转，进行跨文件特征提取与对齐...")
 
         result = orchestrator.run(assets)
+        report_path = _write_fill_run_report(work_dir, input_data.task_id, result)
         if progress_callback:
             progress_callback(input_data.task_id, "success", "多源数据融合与质检完成，物理资产已生成！")
 
         warnings = list(result.fill_result.warnings)
         if result.verification_report.status != "pass":
             warnings.append(result.verification_report.summary)
+        warnings.append(f"fill_run_report={report_path}")
 
         return Mod3_FusionOutput(
             status="success",

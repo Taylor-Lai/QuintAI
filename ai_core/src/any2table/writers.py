@@ -60,7 +60,8 @@ class XlsxWriter:
                 )
                 continue
             worksheet = workbook.worksheets[table_index]
-            data_start_row = 2
+            header_row_index = target_table.anchor.row_index if target_table.anchor and target_table.anchor.row_index is not None else 0
+            data_start_row = header_row_index + 2
             target_records = records_by_table.get(target_table.target_table_id, [])
             for row_offset, record in enumerate(target_records):
                 row_number = data_start_row + row_offset
@@ -118,13 +119,16 @@ class DocxTableWriter:
             if not target_records:
                 continue
 
-            existing_data_rows = max(len(docx_table.rows) - 1, 0)
+            header_row_index = target_table.anchor.row_index if target_table.anchor and target_table.anchor.row_index is not None else 0
+            data_start_index = header_row_index + 1
+            existing_data_rows = max(len(docx_table.rows) - data_start_index, 0)
             while existing_data_rows < len(target_records):
                 docx_table.add_row()
                 existing_data_rows += 1
                 inserted_rows.append({"target_table_id": target_table.target_table_id, "row_index": existing_data_rows})
 
-            for record_index, record in enumerate(target_records, start=1):
+            for record_offset, record in enumerate(target_records):
+                record_index = data_start_index + record_offset
                 if record_index >= len(docx_table.rows):
                     logger.warning(
                         "Not enough rows in docx table for target %s; stopping at record %d of %d",
