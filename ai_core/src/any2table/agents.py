@@ -24,6 +24,92 @@ MAX_PARAGRAPH_CHARS = 40000
 MAX_TABLE_ROWS = 200
 
 
+def _norm_field(value: object) -> str:
+    return "".join(str(value or "").split()).strip().lower().replace("_", "").replace("-", "")
+
+
+def _candidate_value(candidate, field_name: str):
+    target = _norm_field(field_name)
+    for key, value in candidate.values.items():
+        key_norm = _norm_field(key)
+        if key_norm == target or key_norm in target or target in key_norm:
+            return value
+    for key, value in candidate.row_identity.items():
+        key_norm = _norm_field(key)
+        if key_norm == target or key_norm in target or target in key_norm:
+            return value
+    return None
+
+
+def _to_number(value: object) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        import re
+
+        match = re.search(r"-?\d+(?:\.\d+)?", str(value))
+        if match:
+            try:
+                return float(match.group(0))
+            except ValueError:
+                return None
+    return None
+
+
+def _finalize_candidates_by_task(candidates: list, task_spec):
+    if not task_spec or not candidates:
+        return candidates
+
+    sort_field = None
+    sort_reverse = False
+    limit = None
+    for constraint in task_spec.constraints:
+        if constraint.kind == "sort" and constraint.field:
+            sort_field = constraint.field
+            sort_reverse = str(constraint.operator or "").lower() == "desc"
+        elif constraint.kind == "limit":
+            try:
+                limit = max(int(constraint.value), 0)
+            except (TypeError, ValueError):
+                limit = None
+
+    if not sort_field and not limit:
+        return candidates
+
+    identity_fields = ["\u57ce\u5e02", "\u56fd\u5bb6/\u5730\u533a", "\u56fd\u5bb6", "\u5730\u533a", "\u7701\u4efd", "\u65e5\u671f", "date", "city"]
+    deduped_by_key = {}
+    ordered_keys = []
+    for candidate in candidates:
+        parts = [("__target_table_id__", candidate.target_table_id)]
+        for field_name in identity_fields:
+            value = _candidate_value(candidate, field_name)
+            if value not in (None, ""):
+                parts.append((_norm_field(field_name), str(value)))
+        key = tuple(parts) if len(parts) > 1 else (("__candidate_id__", candidate.candidate_id),)
+        previous = deduped_by_key.get(key)
+        if previous is None:
+            deduped_by_key[key] = candidate
+            ordered_keys.append(key)
+        elif candidate.confidence > previous.confidence:
+            deduped_by_key[key] = candidate
+
+    finalized = [deduped_by_key[key] for key in ordered_keys]
+    if sort_field:
+        def sort_key(candidate):
+            value = _candidate_value(candidate, sort_field)
+            number = _to_number(value)
+            if number is not None:
+                return (0, number)
+            return (1, "" if value is None else str(value))
+
+        finalized.sort(key=sort_key, reverse=sort_reverse)
+    if isinstance(limit, int) and limit > 0:
+        finalized = finalized[:limit]
+    return finalized
+
+
 def _source_doc_summaries(state: AgentState) -> list[dict[str, object]]:
     summaries: list[dict[str, object]] = []
     for doc in state.source_docs:
@@ -623,6 +709,17 @@ class CoderAgent:
         merged_candidates = merge_result.merged_candidates
         if not merged_candidates and legacy_records:
             merged_candidates = _legacy_rule_candidates(state, legacy_records)
+        finalized_candidates = _finalize_candidates_by_task(merged_candidates, state.task_spec)
+        if len(finalized_candidates) != len(merged_candidates) or finalized_candidates != merged_candidates:
+            state.add_log(
+                "coder_agent",
+                "candidate_finalized_by_task_constraints",
+                {
+                    "before_count": len(merged_candidates),
+                    "after_count": len(finalized_candidates),
+                },
+            )
+            merged_candidates = finalized_candidates
 
         records = candidates_to_structured_records(merged_candidates)
         records = self.registry.get_compute_engine("python").compute(records=records, task_spec=state.task_spec)

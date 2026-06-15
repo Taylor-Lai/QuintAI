@@ -6,7 +6,6 @@ import logging
 from datetime import datetime
 from pathlib import Path
 
-from docx import Document
 from openpyxl import load_workbook
 
 from any2table.core.models import CanonicalDocument, CellWriteTrace, FillResult, StructuredRecord, TemplateSpec
@@ -98,6 +97,8 @@ class DocxTableWriter:
         template_spec: TemplateSpec,
         records: list[StructuredRecord],
     ) -> FillResult:
+        from docx import Document
+
         output_path = _ensure_output_path(template_doc)
         document = Document(template_doc.file.path)
         records_by_table: dict[str, list[StructuredRecord]] = {}

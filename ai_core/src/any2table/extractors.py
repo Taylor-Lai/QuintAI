@@ -48,6 +48,48 @@ def _normalize(value: str) -> str:
     return "".join(str(value).split()).strip().lower()
 
 
+def _field_name_matches(source_field: str, target_field: str) -> bool:
+    source = _normalize(source_field).replace("_", "").replace("-", "")
+    target = _normalize(target_field).replace("_", "").replace("-", "")
+    return bool(source and target and (source == target or source in target or target in source))
+
+
+def _row_value_for_field(raw_row: dict[str, object], field_name: str) -> object | None:
+    for key, value in raw_row.items():
+        if _field_name_matches(str(key), field_name):
+            return value
+    return None
+
+
+def _to_float(value: object) -> float | None:
+    if value in (None, ""):
+        return None
+    text = str(value).strip().replace(",", "")
+    match = re.search(r"-?\d+(?:\.\d+)?", text)
+    if not match:
+        return None
+    try:
+        return float(match.group(0))
+    except ValueError:
+        return None
+
+
+def _compare_numeric(actual: object, operator: str, expected: object) -> bool:
+    actual_number = _to_float(actual)
+    expected_number = _to_float(expected)
+    if actual_number is None or expected_number is None:
+        return False
+    if operator == ">":
+        return actual_number > expected_number
+    if operator == ">=":
+        return actual_number >= expected_number
+    if operator == "<":
+        return actual_number < expected_number
+    if operator == "<=":
+        return actual_number <= expected_number
+    return actual_number == expected_number
+
+
 def _get_request_text(task_spec: TaskSpec) -> str:
     texts = [str(constraint.value) for constraint in task_spec.constraints if constraint.kind == "request_text"]
     return "\n".join(texts)
@@ -137,7 +179,11 @@ def _structured_filters(task_spec: TaskSpec, target_table) -> dict[str, object]:
         "cities": [],
         "countries": [],
         "exact_time": None,
+        "exact_date": None,
         "date_range": None,
+        "field_filters": [],
+        "sort": None,
+        "limit": None,
     }
 
     for constraint in [*task_spec.constraints, *target_table.local_constraints]:
@@ -149,11 +195,28 @@ def _structured_filters(task_spec: TaskSpec, target_table) -> dict[str, object]:
                 filters["countries"].append(str(constraint.value))
         elif constraint.kind == "exact_datetime" and constraint.value:
             filters["exact_time"] = str(constraint.value)
+        elif constraint.kind == "exact_date" and constraint.value:
+            filters["exact_date"] = str(constraint.value)
         elif constraint.kind == "date_range" and isinstance(constraint.value, dict):
             start = _parse_date_value(constraint.value.get("start"))
             end = _parse_date_value(constraint.value.get("end"))
             if start and end:
                 filters["date_range"] = (start, end)
+        elif constraint.kind == "field_filter" and constraint.field:
+            filters["field_filters"].append(
+                {
+                    "field": constraint.field,
+                    "operator": constraint.operator,
+                    "value": constraint.value,
+                }
+            )
+        elif constraint.kind == "sort" and constraint.field:
+            filters["sort"] = {"field": constraint.field, "operator": constraint.operator}
+        elif constraint.kind == "limit" and constraint.value:
+            try:
+                filters["limit"] = max(int(constraint.value), 0)
+            except (TypeError, ValueError):
+                pass
 
     filters["cities"] = _dedupe_preserve_order(filters["cities"])
     filters["countries"] = _dedupe_preserve_order(filters["countries"])
@@ -182,7 +245,11 @@ def _fallback_filter_context(target_table, task_spec: TaskSpec, evidence_pack: E
         "cities": cities,
         "countries": countries,
         "exact_time": exact_time,
+        "exact_date": None,
         "date_range": date_range,
+        "field_filters": [],
+        "sort": None,
+        "limit": None,
     }
 
 
@@ -190,15 +257,27 @@ def _merge_filters(base_filters: dict[str, object], fallback_filters: dict[str, 
     merged = dict(base_filters)
     for key in ("cities", "countries"):
         merged[key] = base_filters.get(key) or fallback_filters.get(key) or []
-    for key in ("exact_time", "date_range"):
+    for key in ("exact_time", "exact_date", "date_range", "sort", "limit"):
         merged[key] = base_filters.get(key) or fallback_filters.get(key)
+    merged["field_filters"] = base_filters.get("field_filters") or fallback_filters.get("field_filters") or []
     return merged
 
 
 def _extract_filter_context(target_table, task_spec: TaskSpec, evidence_pack: EvidencePack) -> dict[str, object]:
     structured = _structured_filters(task_spec, target_table)
     fallback = _fallback_filter_context(target_table, task_spec, evidence_pack)
-    return _merge_filters(structured, fallback)
+    filters = _merge_filters(structured, fallback)
+    for constraint in task_spec.constraints:
+        if constraint.kind != "entity":
+            continue
+        field_name = constraint.field or ""
+        if any(token in field_name for token in ("城市", "city")):
+            filters.setdefault("cities", []).append(str(constraint.value))
+        if any(token in field_name for token in ("国家", "地区", "country", "nation")):
+            filters.setdefault("countries", []).append(str(constraint.value))
+    filters["cities"] = _dedupe_preserve_order(filters.get("cities") or [])
+    filters["countries"] = _dedupe_preserve_order(filters.get("countries") or [])
+    return filters
 
 
 def _row_matches_filters(raw_row: dict[str, object], filters: dict[str, object]) -> bool:
@@ -218,6 +297,11 @@ def _row_matches_filters(raw_row: dict[str, object], filters: dict[str, object])
     if normalized_exact_time and not any(normalized_exact_time == value for value in normalized_values if value):
         return False
 
+    exact_date = filters.get("exact_date")
+    parsed_exact_date = _parse_date_value(exact_date)
+    if parsed_exact_date and not any(_parse_date_value(value) == parsed_exact_date for value in raw_row.values()):
+        return False
+
     date_range = filters.get("date_range")
     if date_range:
         start_date, end_date = date_range
@@ -228,6 +312,12 @@ def _row_matches_filters(raw_row: dict[str, object], filters: dict[str, object])
                 matched = True
                 break
         if not matched:
+            return False
+
+    for field_filter in filters.get("field_filters") or []:
+        field_name = str(field_filter.get("field") or "")
+        actual = _row_value_for_field(raw_row, field_name)
+        if not _compare_numeric(actual, str(field_filter.get("operator") or "=="), field_filter.get("value")):
             return False
 
     return True
@@ -344,16 +434,37 @@ def _average_candidates(target_table, grouped_candidates: dict[tuple[str, ...], 
     return resolved
 
 
+def _sort_and_limit_candidates(candidates: list[dict[str, object]], filters: dict[str, object]) -> list[dict[str, object]]:
+    resolved = list(candidates)
+    sort_spec = filters.get("sort")
+    if isinstance(sort_spec, dict):
+        field_name = str(sort_spec.get("field") or "")
+        reverse = str(sort_spec.get("operator") or "").lower() == "desc"
+        if field_name:
+            resolved.sort(
+                key=lambda candidate: (
+                    _to_float(candidate.get("values", {}).get(field_name)) is not None,
+                    _to_float(candidate.get("values", {}).get(field_name)) or 0.0,
+                ),
+                reverse=reverse,
+            )
+
+    limit = filters.get("limit")
+    if isinstance(limit, int) and limit > 0:
+        resolved = resolved[:limit]
+    return resolved
+
+
 def _resolve_row_candidates(target_table, task_spec: TaskSpec, filters: dict[str, object], candidates: list[dict[str, object]]) -> list[dict[str, object]]:
     if not candidates:
         return []
     if filters.get("date_range") is None:
-        return candidates
+        return _sort_and_limit_candidates(candidates, filters)
 
     policy = getattr(task_spec, "task_policy", "all_dates") or "all_dates"
     if policy == "all_dates":
         # Return all date rows as-is; appending date to identity field corrupts matching.
-        return list(candidates)
+        return _sort_and_limit_candidates(list(candidates), filters)
 
     identity_fields = _identity_fields_for_target_table(target_table)
     grouped: dict[tuple[str, ...], list[dict[str, object]]] = {}
@@ -362,7 +473,7 @@ def _resolve_row_candidates(target_table, task_spec: TaskSpec, filters: dict[str
         grouped.setdefault(key, []).append(candidate)
 
     if policy == "average":
-        return _average_candidates(target_table, grouped, filters)
+        return _sort_and_limit_candidates(_average_candidates(target_table, grouped, filters), filters)
 
     resolved: list[dict[str, object]] = []
     for key, grouped_candidates in grouped.items():
@@ -378,7 +489,7 @@ def _resolve_row_candidates(target_table, task_spec: TaskSpec, filters: dict[str
                 f"Resolved {policy} row within requested date range using {selected['temporal_value'].isoformat()}."
             )
         resolved.append(updated)
-    return resolved
+    return _sort_and_limit_candidates(resolved, filters)
 
 
 def _candidate_to_record(target_table, record_index: int, candidate: dict[str, object]) -> StructuredRecord:

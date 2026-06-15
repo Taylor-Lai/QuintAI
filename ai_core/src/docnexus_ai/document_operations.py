@@ -193,6 +193,111 @@ def build_rule_based_plan(command: str) -> FormatPlan:
     return FormatPlan(actions=actions)
 
 
+def _contains_any(text: str, tokens: tuple[str, ...]) -> bool:
+    return any(token in text for token in tokens)
+
+
+def _infer_unicode_target_paragraph_index(text: str) -> int | None:
+    if _contains_any(text, ("\u5168\u6587", "\u5168\u90e8", "\u6240\u6709")):
+        return -1
+    if _contains_any(text, ("\u6807\u9898", "\u9898\u76ee")):
+        return 0
+    if _contains_any(text, ("\u7b2c\u4e00\u6bb5", "\u9996\u6bb5")):
+        return 0
+    match = re.search(r"\u7b2c\s*(\d+)\s*\u6bb5", text)
+    if match:
+        return max(int(match.group(1)) - 1, 0)
+    return None
+
+
+def _infer_unicode_alignment(text: str) -> str | None:
+    if _contains_any(text, ("\u5c45\u4e2d", "\u5c45\u4e2d\u5bf9\u9f50")):
+        return "center"
+    if _contains_any(text, ("\u53f3\u5bf9\u9f50", "\u9760\u53f3")):
+        return "right"
+    if _contains_any(text, ("\u5de6\u5bf9\u9f50", "\u9760\u5de6")):
+        return "left"
+    return None
+
+
+def _infer_unicode_color(text: str) -> str | None:
+    hex_match = re.search(r"#?[0-9a-fA-F]{6}", text)
+    if hex_match:
+        color = hex_match.group(0)
+        return color if color.startswith("#") else f"#{color}"
+    if _contains_any(text, ("\u7ea2\u8272", "\u7ea2")):
+        return "#FF0000"
+    if _contains_any(text, ("\u84dd\u8272", "\u84dd")):
+        return "#0000FF"
+    if _contains_any(text, ("\u7eff\u8272", "\u7eff")):
+        return "#008000"
+    if _contains_any(text, ("\u9ed1\u8272", "\u9ed1")):
+        return "#000000"
+    return None
+
+
+def _infer_unicode_font_size(text: str) -> int | None:
+    match = re.search(r"(\d+)\s*(?:\u53f7|\u78c5|pt)", text, re.IGNORECASE)
+    if match:
+        return int(match.group(1))
+    return None
+
+
+def build_unicode_rule_based_plan(command: str) -> FormatPlan:
+    actions: list[FormatAction] = []
+    last_target_index = -1
+    parts = re.split(
+        r"[\uff0c\u3002\uff1b;\n]+|\u7136\u540e|\u5e76\u4e14|\u540c\u65f6|\u63a5\u7740|\u968f\u540e|\u518d",
+        command,
+    )
+    for raw_part in parts:
+        part = raw_part.strip()
+        if not part:
+            continue
+        explicit_target_index = _infer_unicode_target_paragraph_index(part)
+        target_index = explicit_target_index if explicit_target_index is not None else last_target_index
+        if explicit_target_index is not None:
+            last_target_index = explicit_target_index
+
+        bold = True if "\u52a0\u7c97" in part else None
+        font_size = _infer_unicode_font_size(part)
+        color_hex = _infer_unicode_color(part)
+        alignment = _infer_unicode_alignment(part)
+        if any(value is not None for value in (bold, font_size, color_hex, alignment)):
+            actions.append(
+                FormatAction(
+                    operation="format",
+                    target_paragraph_index=target_index,
+                    bold=bold,
+                    font_size=font_size,
+                    color_hex=color_hex,
+                    alignment=alignment,
+                )
+            )
+    return FormatPlan(actions=actions)
+
+
+def merge_rule_plans(*plans: FormatPlan) -> FormatPlan:
+    actions: list[FormatAction] = []
+    seen: set[tuple[object, ...]] = set()
+    for plan in plans:
+        for action in plan.actions:
+            key = (
+                action.operation,
+                action.target_paragraph_index,
+                action.target_text,
+                action.content,
+                action.font_size,
+                action.bold,
+                action.color_hex,
+                action.alignment,
+            )
+            if key not in seen:
+                seen.add(key)
+                actions.append(action)
+    return FormatPlan(actions=actions)
+
+
 def _target_paragraphs(doc: Document, action: FormatAction):
     if action.target_paragraph_index == -1:
         return doc.paragraphs
@@ -372,7 +477,10 @@ def handle_document_operation(input_data):
             f"[{i}] {p.text}" for i, p in enumerate(doc.paragraphs[:10]) if p.text.strip()
         )
 
-        rule_plan = build_rule_based_plan(input_data.natural_language_cmd)
+        rule_plan = merge_rule_plans(
+            build_rule_based_plan(input_data.natural_language_cmd),
+            build_unicode_rule_based_plan(input_data.natural_language_cmd),
+        )
         prompt = ChatPromptTemplate.from_messages([
             ("system", (
                 "你是一个文档智能操作助手。以下是文档的前几段预览：\n{preview}\n\n"

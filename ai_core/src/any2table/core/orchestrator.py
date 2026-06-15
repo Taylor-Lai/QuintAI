@@ -146,6 +146,31 @@ class MultiAgentOrchestrator:
             "runtime": state.runtime_backend or getattr(self.runtime, "backend_name", "unknown"),
             "document_count": len(state.documents),
             "source_document_count": len(state.source_docs),
+            "input_assets": [
+                {
+                    "id": file.id,
+                    "name": file.name,
+                    "ext": file.ext,
+                    "role": file.role,
+                    "size": file.size,
+                }
+                for file in state.files
+            ],
+            "target_tables": [
+                {
+                    "target_table_id": table.target_table_id,
+                    "logical_name": table.logical_name,
+                    "fields": [field.field_name for field in table.schema],
+                    "capacity": table.capacity,
+                }
+                for table in (state.template_spec.target_tables if state.template_spec else [])
+            ],
+            "task_constraints": [
+                constraint.to_dict()
+                for constraint in (state.task_spec.constraints if state.task_spec else [])
+            ],
+            "task_policy": state.task_spec.task_policy if state.task_spec else None,
+            "target_fields": list(state.task_spec.target_fields) if state.task_spec else [],
             "record_count": len(state.records),
             "evidence_count": len(state.evidence_pack.items),
             "route_plan": list(state.route_plan),

@@ -74,14 +74,32 @@ class FillRunReportTests(unittest.TestCase):
                     summary="summary",
                     checks=[VerificationCheck("check", "warning", "message")],
                 )
-                debug = {"record_count": 1}
+                debug = {
+                    "record_count": 1,
+                    "source_document_count": 2,
+                    "target_tables": [{"target_table_id": "t1", "fields": ["城市", "AQI"]}],
+                    "task_constraints": [{"kind": "field_filter", "field": "AQI"}],
+                    "evidence_count": 3,
+                    "merged_candidate_count": 1,
+                    "rag_result": {"route": "rag"},
+                }
 
             path = _write_fill_run_report(Path(tmp), "task-1", Result())
             payload = json.loads(path.read_text(encoding="utf-8"))
+            path.unlink(missing_ok=True)
+            for parent in (path.parent, path.parent.parent):
+                try:
+                    parent.rmdir()
+                except OSError:
+                    pass
 
         self.assertEqual(payload["task_id"], "task-1")
         self.assertEqual(payload["verification_status"], "warning")
         self.assertEqual(payload["debug"]["record_count"], 1)
+        self.assertEqual(payload["input_summary"]["source_document_count"], 2)
+        self.assertEqual(payload["template_fields"], ["城市", "AQI"])
+        self.assertEqual(payload["candidate_stats"]["merged_candidate_count"], 1)
+        self.assertEqual(payload["rag_result"]["route"], "rag")
 
 
 if __name__ == "__main__":

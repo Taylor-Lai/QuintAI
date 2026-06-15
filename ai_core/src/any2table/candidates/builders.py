@@ -308,3 +308,117 @@ def candidate_to_structured_record(candidate: CandidateRecord) -> StructuredReco
 
 def candidates_to_structured_records(candidates: list[CandidateRecord]) -> list[StructuredRecord]:
     return [candidate_to_structured_record(candidate) for candidate in candidates]
+
+
+# Override the legacy mojibake-aware identity helpers with Unicode-safe behavior.
+# Row-oriented tables commonly need entity + date as identity, otherwise multi-day
+# rows for the same city/country collapse during candidate fusion.
+def identity_fields_for_target_fields(
+    target_fields: list[str],
+    *,
+    field_specs: list | None = None,
+) -> list[str]:
+    identity_fields = []
+    for preferred in ("\u56fd\u5bb6/\u5730\u533a", "\u56fd\u5bb6", "\u57ce\u5e02", "\u65e5\u671f", "country", "city", "date"):
+        matched = _match_target_field(preferred, target_fields)
+        if matched and matched not in identity_fields:
+            identity_fields.append(matched)
+    if identity_fields:
+        return identity_fields
+
+    if field_specs:
+        text_like = {"string", "text", "str", ""}
+        for spec in field_specs:
+            data_type = (getattr(spec, "data_type", None) or "").lower()
+            if data_type in text_like or not data_type:
+                return [spec.field_name]
+        return [field_specs[0].field_name]
+    return target_fields[:1]
+
+
+def infer_target_entity_level(target_fields: list[str]) -> str:
+    if _match_target_field("\u57ce\u5e02", target_fields) or _match_target_field("city", target_fields):
+        return "city"
+    if _match_target_field("\u56fd\u5bb6/\u5730\u533a", target_fields) or _match_target_field("\u56fd\u5bb6", target_fields):
+        return "country"
+    return "row"
+
+
+def has_required_row_identity(row_identity: dict[str, object], target_entity_level: str) -> bool:
+    if target_entity_level == "country":
+        country_value = (
+            row_identity.get("\u56fd\u5bb6/\u5730\u533a")
+            or row_identity.get("\u56fd\u5bb6")
+            or row_identity.get("鍥藉/鍦板尯")
+        )
+        return country_value not in (None, "")
+    if target_entity_level == "city":
+        city_value = row_identity.get("\u57ce\u5e02") or row_identity.get("city") or row_identity.get("鍩庡競")
+        return city_value not in (None, "")
+    return bool(row_identity)
+
+
+def missing_required_row_identity_fields(row_identity: dict[str, object], target_entity_level: str) -> list[str]:
+    if target_entity_level == "country":
+        country_value = (
+            row_identity.get("\u56fd\u5bb6/\u5730\u533a")
+            or row_identity.get("\u56fd\u5bb6")
+            or row_identity.get("鍥藉/鍦板尯")
+        )
+        return [] if country_value not in (None, "") else ["\u56fd\u5bb6/\u5730\u533a"]
+    if target_entity_level == "city":
+        city_value = row_identity.get("\u57ce\u5e02") or row_identity.get("city") or row_identity.get("鍩庡競")
+        return [] if city_value not in (None, "") else ["\u57ce\u5e02"]
+    return []
+
+
+def _match_identity_target_field(preferred: str, target_fields: list[str]) -> str | None:
+    preferred_norm = _normalize_field_name(preferred)
+    aliases = {
+        "\u57ce\u5e02": {"\u57ce\u5e02", "\u57ce\u5e02\u540d", "city"},
+        "\u65e5\u671f": {"\u65e5\u671f", "\u65f6\u95f4", "date", "day"},
+        "\u56fd\u5bb6/\u5730\u533a": {"\u56fd\u5bb6/\u5730\u533a", "\u56fd\u5bb6", "\u5730\u533a", "country", "nation"},
+    }
+    preferred_aliases = aliases.get(preferred, {preferred})
+    preferred_norms = {_normalize_field_name(value) for value in preferred_aliases}
+    preferred_norms.add(preferred_norm)
+    for field_name in target_fields:
+        field_norm = _normalize_field_name(field_name)
+        if field_norm in preferred_norms:
+            return field_name
+    for field_name in target_fields:
+        field_norm = _normalize_field_name(field_name)
+        if any(alias and (alias in field_norm or field_norm in alias) for alias in preferred_norms):
+            return field_name
+    return _match_target_field(preferred, target_fields)
+
+
+def identity_fields_for_target_fields(
+    target_fields: list[str],
+    *,
+    field_specs: list | None = None,
+) -> list[str]:
+    identity_fields = []
+    for preferred in ("\u56fd\u5bb6/\u5730\u533a", "\u57ce\u5e02", "\u65e5\u671f"):
+        matched = _match_identity_target_field(preferred, target_fields)
+        if matched and matched not in identity_fields:
+            identity_fields.append(matched)
+    if identity_fields:
+        return identity_fields
+
+    if field_specs:
+        text_like = {"string", "text", "str", ""}
+        for spec in field_specs:
+            data_type = (getattr(spec, "data_type", None) or "").lower()
+            if data_type in text_like or not data_type:
+                return [spec.field_name]
+        return [field_specs[0].field_name]
+    return target_fields[:1]
+
+
+def infer_target_entity_level(target_fields: list[str]) -> str:
+    if _match_identity_target_field("\u57ce\u5e02", target_fields):
+        return "city"
+    if _match_identity_target_field("\u56fd\u5bb6/\u5730\u533a", target_fields):
+        return "country"
+    return "row"
