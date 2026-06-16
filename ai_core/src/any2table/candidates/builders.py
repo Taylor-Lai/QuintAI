@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from any2table.candidates.models import CandidateRecord
 from any2table.core.models import CanonicalDocument, StructuredRecord, TaskSpec, TemplateSpec
 from any2table.extractors import _extract_records_from_paragraph_evidence, _extract_records_from_row_evidence
@@ -52,6 +54,35 @@ def _match_target_field(source_field: str, target_fields: list[str]) -> str | No
             best_score = score
             best_field = target_field
     return best_field if best_score >= 2 else None
+
+
+def _is_city_field(field_name: str) -> bool:
+    normalized = _normalize_field_name(field_name)
+    return normalized in {"\u57ce\u5e02", "\u57ce\u5e02\u540d", "city"} or "\u57ce\u5e02" in normalized
+
+
+def _clean_city_value(value: object) -> object:
+    if value in (None, ""):
+        return value
+    text = str(value).strip()
+    if not text:
+        return value
+
+    full_city = re.search(r"([\u4e00-\u9fff]{2,6}?\u5e02)", text)
+    if full_city:
+        return full_city.group(1)
+
+    lead_match = re.match(r"^([\u4e00-\u9fff]{2,4}?)(?:\u4ee5|\u51ed\u501f|\u51ed|\u4f9d\u6258|\u4f9d|\u5728|\u662f|\u4e3a|GDP|\d|[，,。.；;\s]).*", text)
+    if lead_match:
+        return f"{lead_match.group(1)}\u5e02"
+
+    return value
+
+
+def _clean_schema_value(field_name: str, value: object) -> object:
+    if _is_city_field(field_name):
+        return _clean_city_value(value)
+    return value
 
 
 def identity_fields_for_target_fields(
@@ -141,7 +172,8 @@ def structured_record_to_candidate(
     entity_level: str,
     metadata: dict[str, object] | None = None,
 ) -> CandidateRecord:
-    row_identity = _build_candidate_row_identity(record.values, target_fields, entity_level)
+    cleaned_values = {field_name: _clean_schema_value(field_name, record.values.get(field_name)) for field_name in target_fields}
+    row_identity = _build_candidate_row_identity(cleaned_values, target_fields, entity_level)
     target_entity_level = infer_target_entity_level(target_fields)
     merged_metadata = dict(metadata or {})
     merged_metadata.setdefault("target_entity_level", target_entity_level)
@@ -150,7 +182,7 @@ def structured_record_to_candidate(
         candidate_id=record.record_id,
         target_table_id=record.target_table_id,
         row_identity=row_identity,
-        values={field_name: record.values.get(field_name) for field_name in target_fields},
+        values=cleaned_values,
         field_evidence={field_name: list(evidence_ids) for field_name, evidence_ids in record.field_sources.items()},
         confidence=record.confidence,
         source_strategy=source_strategy,
@@ -206,7 +238,7 @@ def _filter_values_to_schema(raw_values: dict[str, object], target_fields: list[
     for source_field, value in raw_values.items():
         target_field = source_field if source_field in values else _match_target_field(str(source_field), target_fields)
         if target_field and target_field not in used_targets:
-            values[target_field] = value
+            values[target_field] = _clean_schema_value(target_field, value)
             used_targets.add(target_field)
     return values
 

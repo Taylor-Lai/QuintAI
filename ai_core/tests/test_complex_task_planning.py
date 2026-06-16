@@ -19,6 +19,7 @@ from any2table.core.models import (  # noqa: E402
 )
 from any2table.extractors import _extract_records_from_row_evidence  # noqa: E402
 from any2table.candidates.builders import (  # noqa: E402
+    _clean_city_value,
     has_required_row_identity,
     identity_fields_for_target_fields,
 )
@@ -137,6 +138,12 @@ class ComplexTaskPlanningTests(unittest.TestCase):
 
         self.assertEqual(identity_fields_for_target_fields(fields), ["\u57ce\u5e02\u540d"])
         self.assertTrue(has_required_row_identity({"\u57ce\u5e02\u540d": "\u5317\u4eac\u5e02"}, "city"))
+
+    def test_city_value_cleanup_removes_sentence_tail(self) -> None:
+        self.assertEqual(_clean_city_value("\u4e0a\u6d77\u4ee5"), "\u4e0a\u6d77\u5e02")
+        self.assertEqual(_clean_city_value("\u6df1\u5733\u4ee5GDP\u589e\u901f\u9886\u5148"), "\u6df1\u5733\u5e02")
+        self.assertEqual(_clean_city_value("\u91cd\u5e86\u51ed\u501f\u4ea7\u4e1a\u5347\u7ea7"), "\u91cd\u5e86\u5e02")
+        self.assertEqual(_clean_city_value("\u6000\u5316"), "\u6000\u5316")
 
 
 if __name__ == "__main__":

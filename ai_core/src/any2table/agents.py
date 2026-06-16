@@ -58,6 +58,77 @@ def _to_number(value: object) -> float | None:
     return None
 
 
+def _entity_matches(candidate_value: object, expected_value: object) -> bool:
+    if candidate_value in (None, "") or expected_value in (None, ""):
+        return False
+    candidate = str(candidate_value).strip()
+    expected = str(expected_value).strip()
+    if candidate == expected:
+        return True
+    candidate_loose = candidate.removesuffix("\u5e02")
+    expected_loose = expected.removesuffix("\u5e02")
+    return bool(candidate_loose and expected_loose and candidate_loose == expected_loose)
+
+
+def _date_text(value: object) -> str:
+    if value is None:
+        return ""
+    text = str(value).strip()
+    return text[:10]
+
+
+def _candidate_satisfies_task(candidate, task_spec) -> bool:
+    entity_values_by_field: dict[str, list[object]] = {}
+    date_ranges: list[tuple[str, str, str]] = []
+    exact_dates: list[tuple[str, str]] = []
+    field_filters: list[tuple[str, str, object]] = []
+
+    for constraint in task_spec.constraints:
+        if constraint.kind == "entity" and constraint.field:
+            entity_values_by_field.setdefault(constraint.field, []).append(constraint.value)
+        elif constraint.kind == "date_range" and constraint.field and isinstance(constraint.value, dict):
+            start = str(constraint.value.get("start") or "")
+            end = str(constraint.value.get("end") or "")
+            if start and end:
+                date_ranges.append((constraint.field, start, end))
+        elif constraint.kind == "exact_date" and constraint.field:
+            exact_dates.append((constraint.field, str(constraint.value)))
+        elif constraint.kind == "field_filter" and constraint.field:
+            field_filters.append((constraint.field, str(constraint.operator or ""), constraint.value))
+
+    for field_name, expected_values in entity_values_by_field.items():
+        candidate_value = _candidate_value(candidate, field_name)
+        if expected_values and not any(_entity_matches(candidate_value, expected) for expected in expected_values):
+            return False
+
+    for field_name, start, end in date_ranges:
+        value = _date_text(_candidate_value(candidate, field_name))
+        if not value or value < start or value > end:
+            return False
+
+    for field_name, expected in exact_dates:
+        value = _date_text(_candidate_value(candidate, field_name))
+        if value != expected:
+            return False
+
+    for field_name, operator, threshold in field_filters:
+        value = _to_number(_candidate_value(candidate, field_name))
+        threshold_number = _to_number(threshold)
+        if value is None or threshold_number is None:
+            return False
+        if operator in {">", "gt"} and not value > threshold_number:
+            return False
+        if operator in {">=", "gte"} and not value >= threshold_number:
+            return False
+        if operator in {"<", "lt"} and not value < threshold_number:
+            return False
+        if operator in {"<=", "lte"} and not value <= threshold_number:
+            return False
+        if operator in {"=", "==", "eq"} and not value == threshold_number:
+            return False
+    return True
+
+
 def _finalize_candidates_by_task(candidates: list, task_spec):
     if not task_spec or not candidates:
         return candidates
@@ -74,6 +145,10 @@ def _finalize_candidates_by_task(candidates: list, task_spec):
                 limit = max(int(constraint.value), 0)
             except (TypeError, ValueError):
                 limit = None
+
+    filtered_candidates = [candidate for candidate in candidates if _candidate_satisfies_task(candidate, task_spec)]
+    if filtered_candidates:
+        candidates = filtered_candidates
 
     if not sort_field and not limit:
         return candidates
