@@ -65,6 +65,9 @@ class XlsxWriter:
             for row_offset, record in enumerate(target_records):
                 row_number = data_start_row + row_offset
                 for col_index, field in enumerate(target_table.schema, start=1):
+                    header_cell = worksheet.cell(row=header_row_index + 1, column=col_index)
+                    if header_cell.value in (None, ""):
+                        header_cell.value = field.field_name
                     value = record.values.get(field.field_name)
                     worksheet.cell(row=row_number, column=col_index, value=value)
                     written_cells.append(
@@ -140,6 +143,10 @@ class DocxTableWriter:
                 for col_index, field in enumerate(target_table.schema):
                     if col_index >= len(row.cells):
                         continue
+                    if header_row_index < len(docx_table.rows) and col_index < len(docx_table.rows[header_row_index].cells):
+                        header_cell = docx_table.rows[header_row_index].cells[col_index]
+                        if not header_cell.text.strip():
+                            header_cell.text = field.field_name
                     value = record.values.get(field.field_name)
                     row.cells[col_index].text = "" if value is None else str(value)
                     written_cells.append(

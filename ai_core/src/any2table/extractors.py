@@ -441,11 +441,27 @@ def _sort_and_limit_candidates(candidates: list[dict[str, object]], filters: dic
         field_name = str(sort_spec.get("field") or "")
         reverse = str(sort_spec.get("operator") or "").lower() == "desc"
         if field_name:
+            group_when_temporal = any(token in _normalize(field_name) for token in TEMPORAL_FIELD_TOKENS)
+
+            def sort_key(candidate: dict[str, object]):
+                values = candidate.get("values", {})
+                group_key = ()
+                if group_when_temporal and isinstance(values, dict):
+                    group_key = tuple(
+                        str(values.get(identity_field) or "")
+                        for identity_field in _identity_fields_for_target_table_like_values(values)
+                    )
+                    temporal_value = _parse_date_value(values.get(field_name))
+                    if temporal_value is not None:
+                        return (*group_key, 0, temporal_value.isoformat())
+                    return (*group_key, 1, str(values.get(field_name) or ""))
+                sort_number = _to_float(values.get(field_name)) if isinstance(values, dict) else None
+                if sort_number is not None:
+                    return (*group_key, 0, sort_number)
+                return (*group_key, 1, "" if not isinstance(values, dict) else str(values.get(field_name) or ""))
+
             resolved.sort(
-                key=lambda candidate: (
-                    _to_float(candidate.get("values", {}).get(field_name)) is not None,
-                    _to_float(candidate.get("values", {}).get(field_name)) or 0.0,
-                ),
+                key=sort_key,
                 reverse=reverse,
             )
 
@@ -453,6 +469,14 @@ def _sort_and_limit_candidates(candidates: list[dict[str, object]], filters: dic
     if isinstance(limit, int) and limit > 0:
         resolved = resolved[:limit]
     return resolved
+
+
+def _identity_fields_for_target_table_like_values(values: dict[str, object]) -> list[str]:
+    for candidate_fields in (("\u56fd\u5bb6/\u5730\u533a",), ("\u56fd\u5bb6",), ("\u57ce\u5e02",), ("\u57ce\u5e02\u540d",), ("\u7ad9\u70b9\u540d\u79f0",)):
+        matched = [field_name for field_name in candidate_fields if field_name in values]
+        if matched:
+            return matched
+    return []
 
 
 def _resolve_row_candidates(target_table, task_spec: TaskSpec, filters: dict[str, object], candidates: list[dict[str, object]]) -> list[dict[str, object]]:

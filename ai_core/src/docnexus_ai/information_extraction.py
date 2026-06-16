@@ -252,3 +252,98 @@ def handle_information_extraction(input_data):
 
     except Exception:
         return Mod2_ExtractOutput(status="failed", message=traceback.format_exc())
+
+
+_legacy_merge_chunk_extractions = merge_chunk_extractions
+
+
+_UNICODE_DATE_RE = re.compile(r"(\d{4})[年/-](\d{1,2})[月/-](\d{1,2})日?")
+_DATE_FIELD_TOKENS = ("日期", "时间", "截止", "截至", "date", "time", "deadline")
+
+
+def _is_unicode_missing_value(value: object) -> bool:
+    return value is None or str(value).strip() in {"", "未找到", "鏈壘鍒?", "null", "None"}
+
+
+def _is_unicode_date_field(field_name: str) -> bool:
+    normalized = "".join(str(field_name).split()).lower()
+    return any(token in normalized for token in _DATE_FIELD_TOKENS)
+
+
+def _format_unicode_date(match: re.Match[str]) -> str:
+    year, month, day = match.groups()
+    return f"{int(year):04d}-{int(month):02d}-{int(day):02d}"
+
+
+def _find_unicode_date_for_field(full_text: str, field_name: str) -> tuple[str | None, str | None]:
+    if not _is_unicode_date_field(field_name):
+        return None, None
+
+    field_match = re.search(
+        rf"{re.escape(field_name)}[^\d\n]{{0,30}}(\d{{4}}[年/-]\d{{1,2}}[月/-]\d{{1,2}}日?)",
+        full_text,
+        re.IGNORECASE,
+    )
+    if field_match:
+        raw_date = field_match.group(1)
+        date_match = _UNICODE_DATE_RE.search(raw_date)
+        if date_match:
+            return _format_unicode_date(date_match), find_evidence_snippet(full_text, raw_date)
+
+    for date_match in _UNICODE_DATE_RE.finditer(full_text):
+        start = max(date_match.start() - 40, 0)
+        end = min(date_match.end() + 40, len(full_text))
+        context = full_text[start:end]
+        if any(token in context for token in ("日期", "时间", "截止", "截至", "date", "deadline")):
+            return _format_unicode_date(date_match), context.replace("\n", " ").strip()
+
+    date_match = _UNICODE_DATE_RE.search(full_text)
+    if date_match:
+        return _format_unicode_date(date_match), find_evidence_snippet(full_text, date_match.group(0))
+    return None, None
+
+
+def merge_chunk_extractions(
+    chunk_results: list[dict[str, object]],
+    chunks: list[dict[str, object]],
+    target_entities: list[str],
+    full_text: str,
+) -> dict[str, object]:
+    merged = _legacy_merge_chunk_extractions(chunk_results, chunks, target_entities, full_text)
+    meta = merged.setdefault("_meta", {})
+    evidence = meta.setdefault("evidence", {})
+    normalized = meta.setdefault("normalized", {})
+    confidence = meta.setdefault("confidence", {})
+    candidates = meta.setdefault("candidates", {})
+    validation = meta.setdefault("validation", {})
+
+    for entity in target_entities:
+        if not _is_unicode_missing_value(merged.get(entity)):
+            continue
+        fallback_value, fallback_snippet = _find_unicode_date_for_field(full_text, entity)
+        if not fallback_value:
+            continue
+        merged[entity] = fallback_value
+        evidence[entity] = {
+            "chunk_id": "rule_fallback",
+            "char_range": None,
+            "snippet": fallback_snippet,
+            "strategy": "date_regex_fallback",
+        }
+        normalized[entity] = fallback_value
+        confidence[entity] = 0.92
+        candidates.setdefault(entity, [])
+        if fallback_value not in candidates[entity]:
+            candidates[entity].append(fallback_value)
+        validation[entity] = {
+            "status": "pass",
+            "expected_type": "date",
+            "raw_value": fallback_value,
+            "normalized_value": fallback_value,
+            "confidence": confidence[entity],
+        }
+
+    found_count = sum(1 for entity in target_entities if not _is_unicode_missing_value(merged.get(entity)))
+    meta["found_field_count"] = found_count
+    meta["coverage"] = round(found_count / len(target_entities), 4) if target_entities else 0
+    return merged

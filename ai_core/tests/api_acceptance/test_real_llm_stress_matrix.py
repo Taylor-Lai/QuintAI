@@ -233,6 +233,81 @@ class RealLlmStressMatrixTests(unittest.TestCase):
         self.assertEqual(aqis, [160.0, 130.0, 125.0])
         self.assertTrue(all(row[0] == "\u5317\u4eac\u5e02" for row in rows))
 
+    def test_table_fill_covid_daily_rows_keep_date_and_group_country(self) -> None:
+        template_fields = ["\u56fd\u5bb6/\u5730\u533a", "\u5927\u6d32", "\u4eba\u5747GDP", "\u4eba\u53e3", "\u6bcf\u65e5\u68c0\u6d4b\u6570", "\u75c5\u4f8b\u6570"]
+        source_fields = [
+            "\u56fd\u5bb6/\u5730\u533a",
+            "\u5927\u6d32",
+            "\u7eac\u5ea6",
+            "\u7ecf\u5ea6",
+            "\u4eba\u5747GDP",
+            "\u4eba\u53e3",
+            "\u65e5\u671f",
+            "\u6bcf\u65e5\u68c0\u6d4b\u6570",
+            "\u75c5\u4f8b\u6570",
+        ]
+        template = self.work / "covid_template.xlsx"
+        source = self.work / "covid_source.xlsx"
+
+        wb = Workbook()
+        ws = wb.active
+        ws.append(template_fields)
+        wb.save(template)
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Data"
+        ws.append(source_fields)
+        rows = [
+            ("Algeria", "Africa", 28.03, 1.66, 3974, 41318142, "2020-02-26", 269, 2),
+            ("Albania", "Europe", 41.15, 20.17, 5353.2, 2873457, "2020-02-27", 820, 3),
+            ("Algeria", "Africa", 28.03, 1.66, 3974, 41318142, "2020-02-25", 269, 1),
+            ("Albania", "Europe", 41.15, 20.17, 5353.2, 2873457, "2020-02-25", 269, 1),
+            ("Albania", "Europe", 41.15, 20.17, 5353.2, 2873457, "2020-02-26", 820, 2),
+        ]
+        for row in rows:
+            ws.append(row)
+        wb.save(source)
+
+        request = (
+            "\u4eceCOVID-19\u6570\u636e\u4e2d\u586b\u5199\u5404\u56fd\u7684\u65e5\u7c92\u5ea6\u8bb0\u5f55\uff0c"
+            "\u6e90\u8868\u6709\u65e5\u671f\u5fc5\u987b\u4fdd\u7559\u65e5\u671f\uff0c"
+            "\u6309\u65e5\u671f\u5347\u5e8f\u586b\u5199\uff0c\u5e76\u4e14\u540c\u4e00\u56fd\u5bb6\u653e\u5728\u4e00\u8d77\u3002"
+        )
+        with template.open("rb") as template_obj, source.open("rb") as source_obj:
+            response = self.client.post(
+                "/table-fill/upload",
+                data={"user_request": request},
+                files=[
+                    ("template", ("covid_template.xlsx", template_obj, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")),
+                    ("documents", ("covid_source.xlsx", source_obj, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")),
+                ],
+            )
+
+        self.assertEqual(response.status_code, 200, response.text[:500])
+        output = self.work / "covid_filled.xlsx"
+        output.write_bytes(response.content)
+        wb = load_workbook(output, data_only=True)
+        ws = wb.active
+        headers = [cell.value for cell in ws[1] if cell.value not in (None, "")]
+        self.assertIn("\u65e5\u671f", headers)
+        date_index = headers.index("\u65e5\u671f")
+        filled_rows = [
+            row[: len(headers)]
+            for row in ws.iter_rows(min_row=2, values_only=True)
+            if any(value not in (None, "") for value in row[: len(headers)])
+        ]
+        self.assertEqual(
+            [(row[0], str(row[date_index])[:10]) for row in filled_rows],
+            [
+                ("Albania", "2020-02-25"),
+                ("Albania", "2020-02-26"),
+                ("Albania", "2020-02-27"),
+                ("Algeria", "2020-02-25"),
+                ("Algeria", "2020-02-26"),
+            ],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

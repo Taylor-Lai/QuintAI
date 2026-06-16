@@ -145,6 +145,42 @@ class ComplexTaskPlanningTests(unittest.TestCase):
         self.assertEqual(_clean_city_value("\u91cd\u5e86\u51ed\u501f\u4ea7\u4e1a\u5347\u7ea7"), "\u91cd\u5e86\u5e02")
         self.assertEqual(_clean_city_value("\u6000\u5316"), "\u6000\u5316")
 
+    def test_country_daily_rows_are_grouped_then_sorted_by_date(self) -> None:
+        fields = [
+            FieldSpec("country", "\u56fd\u5bb6/\u5730\u533a", "\u56fd\u5bb6\u5730\u533a", "string", True),
+            FieldSpec("continent", "\u5927\u6d32", "\u5927\u6d32", "string", False),
+            FieldSpec("date", "\u65e5\u671f", "\u65e5\u671f", "date", True),
+            FieldSpec("cases", "\u75c5\u4f8b\u6570", "\u75c5\u4f8b\u6570", "number", False),
+        ]
+        template_spec = TemplateSpec(
+            template_doc_id="template",
+            target_tables=[TargetTableSpec("covid", "\u75ab\u60c5", schema=fields)],
+        )
+        request = "\u6309\u65e5\u671f\u5347\u5e8f\u586b\u5199\uff0c\u540c\u4e00\u56fd\u5bb6\u653e\u5728\u4e00\u8d77\u3002"
+        task_spec = DefaultTaskPlanner().plan(_request_doc(request), template_spec, [])
+        target_table = template_spec.target_tables[0]
+        evidence_pack = EvidencePack(
+            task_id="task",
+            items=[
+                EvidenceItem("r1", "row", "doc", {"\u56fd\u5bb6/\u5730\u533a": "Algeria", "\u5927\u6d32": "Africa", "\u65e5\u671f": "2020-02-26", "\u75c5\u4f8b\u6570": 2}),
+                EvidenceItem("r2", "row", "doc", {"\u56fd\u5bb6/\u5730\u533a": "Albania", "\u5927\u6d32": "Europe", "\u65e5\u671f": "2020-02-27", "\u75c5\u4f8b\u6570": 3}),
+                EvidenceItem("r3", "row", "doc", {"\u56fd\u5bb6/\u5730\u533a": "Algeria", "\u5927\u6d32": "Africa", "\u65e5\u671f": "2020-02-25", "\u75c5\u4f8b\u6570": 1}),
+                EvidenceItem("r4", "row", "doc", {"\u56fd\u5bb6/\u5730\u533a": "Albania", "\u5927\u6d32": "Europe", "\u65e5\u671f": "2020-02-25", "\u75c5\u4f8b\u6570": 1}),
+            ],
+        )
+
+        records = _extract_records_from_row_evidence(target_table, task_spec, evidence_pack)
+
+        self.assertEqual(
+            [(record.values["\u56fd\u5bb6/\u5730\u533a"], record.values["\u65e5\u671f"]) for record in records],
+            [
+                ("Albania", "2020-02-25"),
+                ("Albania", "2020-02-27"),
+                ("Algeria", "2020-02-25"),
+                ("Algeria", "2020-02-26"),
+            ],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -76,5 +76,22 @@ class InformationExtractionMetadataTests(unittest.TestCase):
         self.assertEqual(result["_meta"]["validation"]["负责人"]["status"], "conflict")
 
 
+class UnicodeInformationExtractionFallbackTests(unittest.TestCase):
+    def test_missing_unicode_date_is_filled_by_rule_fallback(self) -> None:
+        full_text = "项目名称：全球疫情分析\n截止日期：2026年7月15日\n负责人：李雷"
+        chunks = [{"chunk_id": 0, "start": 0, "end": len(full_text), "text": full_text}]
+        result = merge_chunk_extractions(
+            [{"项目名称": "全球疫情分析", "截止日期": "未找到"}],
+            chunks,
+            ["项目名称", "截止日期"],
+            full_text,
+        )
+
+        self.assertEqual(result["截止日期"], "2026-07-15")
+        self.assertEqual(result["_meta"]["normalized"]["截止日期"], "2026-07-15")
+        self.assertEqual(result["_meta"]["validation"]["截止日期"]["status"], "pass")
+        self.assertEqual(result["_meta"]["evidence"]["截止日期"]["strategy"], "date_regex_fallback")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 
 from any2table.candidates.builders import (
     build_agent_candidates_from_skill_result,
@@ -11,7 +12,7 @@ from any2table.candidates.builders import (
     infer_target_entity_level,
     structured_record_to_candidate,
 )
-from any2table.core.models import VerificationCheck
+from any2table.core.models import Constraint, FieldSpec, VerificationCheck
 from any2table.core.runtime import AgentState
 from any2table.indexing.build_units import build_retrieval_units
 from any2table.merging import merge_candidates
@@ -75,6 +76,19 @@ def _date_text(value: object) -> str:
         return ""
     text = str(value).strip()
     return text[:10]
+
+
+def _candidate_entity_group_key(candidate) -> tuple[str, str]:
+    for field_name in ("\u56fd\u5bb6/\u5730\u533a", "\u56fd\u5bb6", "\u5730\u533a", "\u57ce\u5e02", "\u57ce\u5e02\u540d", "country", "city"):
+        value = _candidate_value(candidate, field_name)
+        if value not in (None, ""):
+            return (_norm_field(field_name), str(value))
+    return ("", "")
+
+
+def _is_date_field_name(field_name: str | None) -> bool:
+    normalized = _norm_field(field_name or "")
+    return any(token in normalized for token in ("\u65e5\u671f", "\u65f6\u95f4", "date", "time"))
 
 
 def _candidate_satisfies_task(candidate, task_spec) -> bool:
@@ -174,10 +188,13 @@ def _finalize_candidates_by_task(candidates: list, task_spec):
     if sort_field:
         def sort_key(candidate):
             value = _candidate_value(candidate, sort_field)
+            group_key = _candidate_entity_group_key(candidate) if _is_date_field_name(sort_field) else ("", "")
+            if _is_date_field_name(sort_field):
+                return (*group_key, 0, _date_text(value))
             number = _to_number(value)
             if number is not None:
-                return (0, number)
-            return (1, "" if value is None else str(value))
+                return (*group_key, 0, number)
+            return (*group_key, 1, "" if value is None else str(value))
 
         finalized.sort(key=sort_key, reverse=sort_reverse)
     if isinstance(limit, int) and limit > 0:
@@ -198,6 +215,60 @@ def _source_doc_summaries(state: AgentState) -> list[dict[str, object]]:
             }
         )
     return summaries
+
+
+def _source_docs_have_temporal_field(source_docs) -> bool:
+    temporal_tokens = ("\u65e5\u671f", "\u65f6\u95f4", "date", "time")
+    for doc in source_docs:
+        for table in getattr(doc, "tables", []):
+            for header in getattr(table, "headers", []):
+                normalized = _norm_field(getattr(header, "name", ""))
+                if any(token in normalized for token in temporal_tokens):
+                    return True
+        for block in getattr(doc, "blocks", []):
+            text = getattr(block, "text", "") or ""
+            if re.search(r"\d{4}[/-]\d{1,2}[/-]\d{1,2}|\d{4}\u5e74\d{1,2}\u6708\d{1,2}\u65e5", text):
+                return True
+    return False
+
+
+def _ensure_temporal_schema_for_daily_sources(template_spec, task_spec, source_docs) -> None:
+    if not _source_docs_have_temporal_field(source_docs):
+        return
+    request_text = "\n".join(
+        str(constraint.value)
+        for constraint in task_spec.constraints
+        if constraint.kind == "request_text" and constraint.value
+    )
+    for target_table in template_spec.target_tables:
+        field_names = [field.field_name for field in target_table.schema]
+        if any(_is_date_field_name(field_name) for field_name in field_names):
+            continue
+        field_id = f"{target_table.target_table_id}#field-date"
+        target_table.schema.append(
+            FieldSpec(
+                field_id=field_id,
+                field_name="\u65e5\u671f",
+                normalized_name="\u65e5\u671f",
+                data_type="date",
+                required=False,
+            )
+        )
+        if "\u65e5\u671f" not in task_spec.target_fields:
+            task_spec.target_fields.append("\u65e5\u671f")
+    has_sort = any(constraint.kind == "sort" for constraint in task_spec.constraints)
+    if not has_sort and re.search(r"(?:\u6309|\u4f9d\u636e)?\s*\u65e5\u671f\s*(?:\u5347\u5e8f|\u964d\u5e8f|\u6392\u5e8f)", request_text):
+        descending = "\u964d\u5e8f" in request_text
+        task_spec.constraints.append(
+            Constraint(
+                constraint_id=f"{task_spec.task_id}#auto-date-sort",
+                source="schema_augmentation",
+                kind="sort",
+                field="\u65e5\u671f",
+                operator="desc" if descending else "asc",
+                value="\u65e5\u671f",
+            )
+        )
 
 
 def _attach_skill(registry, state: AgentState, agent_name: str, skill_name: str, mode: str, inputs: dict[str, object]) -> None:
@@ -492,6 +563,7 @@ class TableAgent:
             template_spec=template_spec,
             source_docs=state.source_docs,
         )
+        _ensure_temporal_schema_for_daily_sources(template_spec, task_spec, state.source_docs)
 
         state.template_spec = template_spec
         state.task_spec = task_spec
