@@ -184,14 +184,15 @@ def _structured_filters(task_spec: TaskSpec, target_table) -> dict[str, object]:
         "field_filters": [],
         "sort": None,
         "limit": None,
+        "group_entities": False,
     }
 
     for constraint in [*task_spec.constraints, *target_table.local_constraints]:
         if constraint.kind == "entity":
             field_name = constraint.field or ""
-            if "城市" in field_name:
+            if any(token in field_name for token in ("城市", "城市名", "city")):
                 filters["cities"].append(str(constraint.value))
-            if "国家" in field_name:
+            if any(token in field_name for token in ("国家", "地区", "country", "nation")):
                 filters["countries"].append(str(constraint.value))
         elif constraint.kind == "exact_datetime" and constraint.value:
             filters["exact_time"] = str(constraint.value)
@@ -250,6 +251,12 @@ def _fallback_filter_context(target_table, task_spec: TaskSpec, evidence_pack: E
         "field_filters": [],
         "sort": None,
         "limit": None,
+        "group_entities": bool(
+            re.search(
+                r"(\u540c\u4e00|\u6bcf\u4e2a|\u6309).{0,8}(\u56fd\u5bb6|\u5730\u533a|\u57ce\u5e02).{0,8}(\u4e00\u8d77|\u5206\u7ec4|\u805a\u5408|\u653e\u5728\u4e00\u8d77)",
+                request_text,
+            )
+        ),
     }
 
 
@@ -257,7 +264,7 @@ def _merge_filters(base_filters: dict[str, object], fallback_filters: dict[str, 
     merged = dict(base_filters)
     for key in ("cities", "countries"):
         merged[key] = base_filters.get(key) or fallback_filters.get(key) or []
-    for key in ("exact_time", "exact_date", "date_range", "sort", "limit"):
+    for key in ("exact_time", "exact_date", "date_range", "sort", "limit", "group_entities"):
         merged[key] = base_filters.get(key) or fallback_filters.get(key)
     merged["field_filters"] = base_filters.get("field_filters") or fallback_filters.get("field_filters") or []
     return merged
@@ -442,15 +449,17 @@ def _sort_and_limit_candidates(candidates: list[dict[str, object]], filters: dic
         reverse = str(sort_spec.get("operator") or "").lower() == "desc"
         if field_name:
             group_when_temporal = any(token in _normalize(field_name) for token in TEMPORAL_FIELD_TOKENS)
+            group_entities = bool(filters.get("group_entities"))
 
             def sort_key(candidate: dict[str, object]):
                 values = candidate.get("values", {})
                 group_key = ()
-                if group_when_temporal and isinstance(values, dict):
+                if (group_when_temporal or group_entities) and isinstance(values, dict):
                     group_key = tuple(
                         str(values.get(identity_field) or "")
                         for identity_field in _identity_fields_for_target_table_like_values(values)
                     )
+                if group_when_temporal and isinstance(values, dict):
                     temporal_value = _parse_date_value(values.get(field_name))
                     if temporal_value is not None:
                         return (*group_key, 0, temporal_value.isoformat())

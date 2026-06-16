@@ -91,6 +91,39 @@ def _is_date_field_name(field_name: str | None) -> bool:
     return any(token in normalized for token in ("\u65e5\u671f", "\u65f6\u95f4", "date", "time"))
 
 
+def _task_request_text(task_spec) -> str:
+    if not task_spec:
+        return ""
+    return "\n".join(
+        str(constraint.value)
+        for constraint in task_spec.constraints
+        if constraint.kind == "request_text" and constraint.value
+    )
+
+
+def _task_requests_entity_grouping(task_spec) -> bool:
+    request_text = _task_request_text(task_spec)
+    return bool(
+        re.search(
+            r"(\u540c\u4e00|\u6bcf\u4e2a|\u6309).{0,8}(\u56fd\u5bb6|\u5730\u533a|\u57ce\u5e02).{0,8}(\u4e00\u8d77|\u5206\u7ec4|\u805a\u5408|\u653e\u5728\u4e00\u8d77)",
+            request_text,
+        )
+    )
+
+
+def _task_requires_temporal_output(task_spec) -> bool:
+    request_text = _task_request_text(task_spec)
+    if any(constraint.kind in {"date_range", "exact_date", "exact_datetime"} for constraint in task_spec.constraints):
+        return True
+    return bool(
+        re.search(
+            r"\u65e5\u671f|\u65f6\u95f4|\u65e5\u7c92\u5ea6|\u9010\u65e5|\u6bcf\u5929|\u6309\u65e5|\u4fdd\u7559\u65e5\u671f|date|time",
+            request_text,
+            re.IGNORECASE,
+        )
+    )
+
+
 def _candidate_satisfies_task(candidate, task_spec) -> bool:
     entity_values_by_field: dict[str, list[object]] = {}
     date_ranges: list[tuple[str, str, str]] = []
@@ -186,9 +219,11 @@ def _finalize_candidates_by_task(candidates: list, task_spec):
 
     finalized = [deduped_by_key[key] for key in ordered_keys]
     if sort_field:
+        use_entity_grouping = _is_date_field_name(sort_field) or _task_requests_entity_grouping(task_spec)
+
         def sort_key(candidate):
             value = _candidate_value(candidate, sort_field)
-            group_key = _candidate_entity_group_key(candidate) if _is_date_field_name(sort_field) else ("", "")
+            group_key = _candidate_entity_group_key(candidate) if use_entity_grouping else ("", "")
             if _is_date_field_name(sort_field):
                 return (*group_key, 0, _date_text(value))
             number = _to_number(value)
@@ -235,11 +270,9 @@ def _source_docs_have_temporal_field(source_docs) -> bool:
 def _ensure_temporal_schema_for_daily_sources(template_spec, task_spec, source_docs) -> None:
     if not _source_docs_have_temporal_field(source_docs):
         return
-    request_text = "\n".join(
-        str(constraint.value)
-        for constraint in task_spec.constraints
-        if constraint.kind == "request_text" and constraint.value
-    )
+    if not _task_requires_temporal_output(task_spec):
+        return
+    request_text = _task_request_text(task_spec)
     for target_table in template_spec.target_tables:
         field_names = [field.field_name for field in target_table.schema]
         if any(_is_date_field_name(field_name) for field_name in field_names):

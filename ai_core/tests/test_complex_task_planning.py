@@ -8,6 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from any2table.core.models import (  # noqa: E402
     CanonicalDocument,
+    CanonicalTable,
     DocumentBlock,
     EvidenceItem,
     EvidencePack,
@@ -15,8 +16,10 @@ from any2table.core.models import (  # noqa: E402
     FileAsset,
     LocationRef,
     TargetTableSpec,
+    TableHeader,
     TemplateSpec,
 )
+from any2table.agents import _ensure_temporal_schema_for_daily_sources  # noqa: E402
 from any2table.extractors import _extract_records_from_row_evidence  # noqa: E402
 from any2table.candidates.builders import (  # noqa: E402
     _clean_city_value,
@@ -69,6 +72,43 @@ def _template_spec() -> TemplateSpec:
                 target_table_id="table-1",
                 logical_name="\u7a7a\u6c14\u8d28\u91cf",
                 schema=fields,
+            )
+        ],
+    )
+
+
+def _source_doc_with_date_header() -> CanonicalDocument:
+    return CanonicalDocument(
+        doc_id="source",
+        file=_asset("source"),
+        doc_type="xlsx",
+        tables=[
+            CanonicalTable(
+                table_id="source#table-0",
+                source_doc_id="source",
+                table_type="data",
+                name="Data",
+                headers=[
+                    TableHeader("h1", "\u56fd\u5bb6/\u5730\u533a", "\u56fd\u5bb6\u5730\u533a", 0),
+                    TableHeader("h2", "\u65e5\u671f", "\u65e5\u671f", 1),
+                    TableHeader("h3", "\u75c5\u4f8b\u6570", "\u75c5\u4f8b\u6570", 2),
+                ],
+            )
+        ],
+    )
+
+
+def _country_template_without_date() -> TemplateSpec:
+    return TemplateSpec(
+        template_doc_id="template",
+        target_tables=[
+            TargetTableSpec(
+                "covid",
+                "\u75ab\u60c5",
+                schema=[
+                    FieldSpec("country", "\u56fd\u5bb6/\u5730\u533a", "\u56fd\u5bb6\u5730\u533a", "string", True),
+                    FieldSpec("cases", "\u75c5\u4f8b\u6570", "\u75c5\u4f8b\u6570", "number", False),
+                ],
             )
         ],
     )
@@ -180,6 +220,36 @@ class ComplexTaskPlanningTests(unittest.TestCase):
                 ("Algeria", "2020-02-26"),
             ],
         )
+
+    def test_temporal_schema_augmentation_requires_temporal_request(self) -> None:
+        template_spec = _country_template_without_date()
+        task_spec = DefaultTaskPlanner().plan(
+            _request_doc("\u586b\u5199\u56fd\u5bb6/\u5730\u533a\u548c\u75c5\u4f8b\u6570\u3002"),
+            template_spec,
+            [],
+        )
+
+        _ensure_temporal_schema_for_daily_sources(template_spec, task_spec, [_source_doc_with_date_header()])
+
+        self.assertNotIn("\u65e5\u671f", [field.field_name for field in template_spec.target_tables[0].schema])
+        self.assertNotIn("\u65e5\u671f", task_spec.target_fields)
+
+    def test_temporal_schema_augmentation_adds_date_for_daily_request(self) -> None:
+        template_spec = _country_template_without_date()
+        task_spec = DefaultTaskPlanner().plan(
+            _request_doc(
+                "\u6e90\u8868\u6709\u65e5\u671f\u5fc5\u987b\u4fdd\u7559\u65e5\u671f\uff0c"
+                "\u6309\u65e5\u671f\u5347\u5e8f\u586b\u5199\uff0c\u540c\u4e00\u56fd\u5bb6\u653e\u5728\u4e00\u8d77\u3002"
+            ),
+            template_spec,
+            [],
+        )
+
+        _ensure_temporal_schema_for_daily_sources(template_spec, task_spec, [_source_doc_with_date_header()])
+
+        self.assertIn("\u65e5\u671f", [field.field_name for field in template_spec.target_tables[0].schema])
+        self.assertIn("\u65e5\u671f", task_spec.target_fields)
+        self.assertTrue(any(c.kind == "sort" and c.field == "\u65e5\u671f" for c in task_spec.constraints))
 
 
 if __name__ == "__main__":
