@@ -718,6 +718,116 @@ def _apply_paragraph_temporal_policy(target_table, task_spec: TaskSpec, values: 
     return dict(values), list(notes)
 
 
+def _target_date_field(target_table) -> str | None:
+    for field in target_table.schema:
+        if any(token in _normalize(field.field_name) for token in TEMPORAL_FIELD_TOKENS):
+            return field.field_name
+    return None
+
+
+def _task_has_temporal_constraint(task_spec: TaskSpec) -> bool:
+    return any(constraint.kind in {"date_range", "exact_date", "exact_datetime"} for constraint in task_spec.constraints)
+
+
+def _covid_docx_requires_daily_records(target_table, task_spec: TaskSpec) -> bool:
+    return _target_date_field(target_table) is not None or _task_has_temporal_constraint(task_spec)
+
+
+def _build_covid_country_values(
+    target_table,
+    *,
+    country_name: str,
+    continent: str | None,
+    per_gdp_value: int | None,
+    population_value: int | None,
+    test_value: int | None,
+    case_value: int | None,
+    record_date: date | None = None,
+) -> dict[str, object]:
+    values = {field.field_name: None for field in target_table.schema}
+    mapping = {
+        "国家/地区": country_name,
+        "大洲": continent,
+        "人均GDP": per_gdp_value,
+        "人口": population_value,
+        "每日检测数": test_value,
+        "病例数": case_value,
+    }
+    for target_field in values:
+        for source_field, source_value in mapping.items():
+            if _field_name_matches(source_field, target_field):
+                values[target_field] = source_value
+                break
+    date_field = _target_date_field(target_table)
+    if date_field and record_date is not None:
+        values[date_field] = record_date.isoformat()
+    return values
+
+
+def _extract_covid_daily_country_records(
+    target_table,
+    task_spec: TaskSpec,
+    paragraph_items: list,
+    *,
+    country_name: str,
+    continent: str | None,
+    per_gdp_value: int | None,
+    population_value: int | None,
+    test_value: int | None,
+) -> list[StructuredRecord]:
+    if not _covid_docx_requires_daily_records(target_table, task_spec):
+        return []
+
+    records: list[StructuredRecord] = []
+    current_date: date | None = None
+    current_date_evidence: str | None = None
+    seen: set[tuple[str, str]] = set()
+    for item in paragraph_items:
+        text = item.content.strip()
+        date_match = TITLE_DATE_PATTERN.search(text)
+        if date_match:
+            current_date = date(int(date_match.group(1)), int(date_match.group(2)), int(date_match.group(3)))
+            current_date_evidence = item.evidence_id
+
+        case_match = NATIONAL_CASES_PATTERN.search(text)
+        if not case_match or current_date is None:
+            continue
+
+        key = (country_name, current_date.isoformat())
+        if key in seen:
+            continue
+        seen.add(key)
+        values = _build_covid_country_values(
+            target_table,
+            country_name=country_name,
+            continent=continent,
+            per_gdp_value=per_gdp_value,
+            population_value=population_value,
+            test_value=test_value,
+            case_value=int(case_match.group(1)),
+            record_date=current_date,
+        )
+        field_sources = {field_name: [item.evidence_id] for field_name, value in values.items() if value not in (None, "")}
+        date_field = _target_date_field(target_table)
+        if date_field and current_date_evidence:
+            field_sources[date_field] = [current_date_evidence]
+        records.append(
+            StructuredRecord(
+                record_id=f"{target_table.target_table_id}#docx-country-{current_date.isoformat()}",
+                target_table_id=target_table.target_table_id,
+                values=values,
+                field_sources=field_sources,
+                confidence=0.72,
+                status="partial",
+                notes=[
+                    "Extracted China daily COVID record from docx paragraph evidence.",
+                    "Country-level static fields may be aggregated from provincial sections.",
+                ],
+            )
+        )
+    return records
+
+
 def _extract_covid_country_record(target_table, task_spec: TaskSpec, evidence_pack: EvidencePack) -> list[StructuredRecord]:
     """COVID 国家级记录提取（legacy 兼容回退，仅在 schema 完全匹配时调用）。"""
     field_names = {field.field_name for field in target_table.schema}
@@ -781,14 +891,29 @@ def _extract_covid_country_record(target_table, task_spec: TaskSpec, evidence_pa
         if total_population:
             per_gdp_value = int(weighted_sum / total_population)
 
-    values = {
-        "国家/地区": country_name,
-        "大洲": continent,
-        "人均GDP": per_gdp_value,
-        "人口": population_value,
-        "每日检测数": test_value,
-        "病例数": national_cases,
-    }
+    daily_records = _extract_covid_daily_country_records(
+        target_table,
+        task_spec,
+        paragraph_items,
+        country_name=country_name,
+        continent=continent,
+        per_gdp_value=per_gdp_value,
+        population_value=population_value,
+        test_value=test_value,
+    )
+    if daily_records:
+        return daily_records
+
+    values = _build_covid_country_values(
+        target_table,
+        country_name=country_name,
+        continent=continent,
+        per_gdp_value=per_gdp_value,
+        population_value=population_value,
+        test_value=test_value,
+        case_value=national_cases,
+        record_date=title_date,
+    )
     field_sources = {
         "国家/地区": [paragraph_items[0].evidence_id],
     }

@@ -218,6 +218,59 @@ class RowResolutionTests(unittest.TestCase):
         self.assertTrue(record.values["人口"])
         self.assertTrue(any("Synthesized country-level record" in note for note in record.notes))
 
+    def test_covid_docx_schema_extraction_builds_china_daily_records_when_date_required(self) -> None:
+        target_table = TargetTableSpec(
+            target_table_id="target-table-1",
+            logical_name="covid",
+            schema=[
+                FieldSpec(field_id="f1", field_name="国家/地区", normalized_name="国家/地区", data_type="string", required=True),
+                FieldSpec(field_id="f2", field_name="大洲", normalized_name="大洲", data_type="string", required=False),
+                FieldSpec(field_id="f3", field_name="人均GDP", normalized_name="人均GDP", data_type="number", required=False),
+                FieldSpec(field_id="f4", field_name="人口", normalized_name="人口", data_type="number", required=False),
+                FieldSpec(field_id="f5", field_name="日期", normalized_name="日期", data_type="date", required=True),
+                FieldSpec(field_id="f6", field_name="每日检测数", normalized_name="每日检测数", data_type="number", required=False),
+                FieldSpec(field_id="f7", field_name="病例数", normalized_name="病例数", data_type="number", required=False),
+            ],
+        )
+        task_spec = TaskSpec(
+            task_id="task-1",
+            intent="fill_table",
+            target_template_id="template-1",
+            target_tables=["target-table-1"],
+            target_fields=["国家/地区", "大洲", "人均GDP", "人口", "日期", "每日检测数", "病例数"],
+            constraints=[
+                Constraint(
+                    constraint_id="c1",
+                    source="user_request",
+                    kind="date_range",
+                    field="日期",
+                    operator="between",
+                    value={"start": "2020-07-01", "end": "2020-08-31"},
+                )
+            ],
+            task_policy="all_dates",
+        )
+        evidence_pack = EvidencePack(
+            task_id="task-1",
+            items=[
+                EvidenceItem("p0", "paragraph", "china-docx", "2020 年 7 月 27 日中国各省新冠疫情全景纪实"),
+                EvidenceItem("p1", "paragraph", "china-docx", "Asia（亚洲）"),
+                EvidenceItem("p2", "paragraph", "china-docx", "当日全国新增确诊病例 68 例。"),
+                EvidenceItem("p3", "paragraph", "china-docx", "2020 年 8 月 1 日中国新冠疫情通报"),
+                EvidenceItem("p4", "paragraph", "china-docx", "当日全国新增确诊病例 45 例。"),
+                EvidenceItem("p5", "paragraph", "china-docx", "湖北省"),
+                EvidenceItem("p6", "paragraph", "china-docx", "常住人口约 5775 万人，人均 GDP 约 7.3 万元，当日核酸检测量约 12.6 万份。"),
+            ],
+        )
+
+        records = _extract_records_from_paragraph_evidence(target_table, task_spec, evidence_pack)
+
+        self.assertEqual(
+            [(record.values["国家/地区"], record.values["日期"], record.values["病例数"]) for record in records],
+            [("China", "2020-07-27", 68), ("China", "2020-08-01", 45)],
+        )
+        self.assertTrue(all(record.values["大洲"] == "Asia" for record in records))
+
 
 if __name__ == "__main__":
     unittest.main()

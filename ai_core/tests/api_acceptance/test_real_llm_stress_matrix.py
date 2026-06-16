@@ -293,6 +293,7 @@ class RealLlmStressMatrixTests(unittest.TestCase):
         headers = [cell.value for cell in ws[1] if cell.value not in (None, "")]
         self.assertIn("\u65e5\u671f", headers)
         date_index = headers.index("\u65e5\u671f")
+        cases_index = headers.index("\u75c5\u4f8b\u6570")
         filled_rows = [
             row[: len(headers)]
             for row in ws.iter_rows(min_row=2, values_only=True)
@@ -307,6 +308,72 @@ class RealLlmStressMatrixTests(unittest.TestCase):
                 ("Algeria", "2020-02-25"),
                 ("Algeria", "2020-02-26"),
             ],
+        )
+
+    def test_table_fill_covid_merges_china_docx_daily_records(self) -> None:
+        template_fields = ["\u56fd\u5bb6/\u5730\u533a", "\u5927\u6d32", "\u4eba\u5747GDP", "\u4eba\u53e3", "\u6bcf\u65e5\u68c0\u6d4b\u6570", "\u75c5\u4f8b\u6570"]
+        source_fields = ["\u56fd\u5bb6/\u5730\u533a", "\u5927\u6d32", "\u4eba\u5747GDP", "\u4eba\u53e3", "\u65e5\u671f", "\u6bcf\u65e5\u68c0\u6d4b\u6570", "\u75c5\u4f8b\u6570"]
+        template = self.work / "covid_merge_template.xlsx"
+        global_source = self.work / "covid_global_source.xlsx"
+        china_docx = self.work / "china_covid.docx"
+
+        wb = Workbook()
+        ws = wb.active
+        ws.append(template_fields)
+        wb.save(template)
+
+        wb = Workbook()
+        ws = wb.active
+        ws.append(source_fields)
+        ws.append(("Albania", "Europe", 5353.2, 2873457, datetime(2020, 7, 27), 820, 3000))
+        ws.append(("Albania", "Europe", 5353.2, 2873457, datetime(2020, 8, 1), 830, 3100))
+        wb.save(global_source)
+
+        doc = Document()
+        doc.add_paragraph("2020 年 7 月 27 日中国各省新冠疫情全景纪实")
+        doc.add_paragraph("Asia（亚洲）")
+        doc.add_paragraph("当日全国新增确诊病例 68 例。")
+        doc.add_paragraph("湖北省")
+        doc.add_paragraph("常住人口约 5775 万人，人均 GDP 约 7.3 万元，当日核酸检测量约 12.6 万份。")
+        doc.add_paragraph("2020 年 8 月 1 日中国新冠疫情通报")
+        doc.add_paragraph("当日全国新增确诊病例 45 例。")
+        doc.save(china_docx)
+
+        request = (
+            "\u667a\u80fd\u586b\u8868\uff0c\u5c06\u4e24\u4e2a\u6587\u4ef6\u7684\u5185\u5bb9\u4e2d"
+            "\u65e5\u671f\u4e00\u5217\u4ece2020/7/1\u52302020/8/31\u7684\u6570\u636e\u586b\u5165\u6a21\u677f\uff0c"
+            "\u6e90\u8868\u6709\u65e5\u671f\u5fc5\u987b\u4fdd\u7559\u65e5\u671f\uff0c\u540c\u4e00\u56fd\u5bb6\u653e\u5728\u4e00\u8d77\u3002"
+        )
+        with template.open("rb") as template_obj, global_source.open("rb") as xlsx_obj, china_docx.open("rb") as docx_obj:
+            response = self.client.post(
+                "/table-fill/upload",
+                data={"user_request": request},
+                files=[
+                    ("template", ("covid_merge_template.xlsx", template_obj, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")),
+                    ("documents", ("covid_global_source.xlsx", xlsx_obj, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")),
+                    ("documents", ("china_covid.docx", docx_obj, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")),
+                ],
+            )
+
+        self.assertEqual(response.status_code, 200, response.text[:500])
+        output = self.work / "covid_merge_filled.xlsx"
+        output.write_bytes(response.content)
+        wb = load_workbook(output, data_only=True)
+        ws = wb.active
+        headers = [cell.value for cell in ws[1] if cell.value not in (None, "")]
+        self.assertIn("\u65e5\u671f", headers)
+        date_index = headers.index("\u65e5\u671f")
+        cases_index = headers.index("\u75c5\u4f8b\u6570")
+        rows = [
+            row[: len(headers)]
+            for row in ws.iter_rows(min_row=2, values_only=True)
+            if any(value not in (None, "") for value in row[: len(headers)])
+        ]
+        china_rows = [row for row in rows if row[0] == "China"]
+
+        self.assertEqual(
+            [(row[0], str(row[date_index]), row[cases_index]) for row in china_rows],
+            [("China", "2020-07-27", 68), ("China", "2020-08-01", 45)],
         )
 
 
