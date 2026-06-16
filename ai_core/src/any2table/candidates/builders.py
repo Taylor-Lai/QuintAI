@@ -422,3 +422,32 @@ def infer_target_entity_level(target_fields: list[str]) -> str:
     if _match_identity_target_field("\u56fd\u5bb6/\u5730\u533a", target_fields):
         return "country"
     return "row"
+
+
+def _identity_value_for_alias(row_identity: dict[str, object], aliases: tuple[str, ...]) -> object:
+    alias_norms = {_normalize_field_name(alias) for alias in aliases}
+    for key, value in row_identity.items():
+        key_norm = _normalize_field_name(key)
+        if key_norm in alias_norms or any(alias and (alias in key_norm or key_norm in alias) for alias in alias_norms):
+            return value
+    return None
+
+
+def has_required_row_identity(row_identity: dict[str, object], target_entity_level: str) -> bool:
+    if target_entity_level == "country":
+        country_value = _identity_value_for_alias(row_identity, ("\u56fd\u5bb6/\u5730\u533a", "\u56fd\u5bb6", "\u5730\u533a", "country", "nation", "鍥藉/鍦板尯"))
+        return country_value not in (None, "")
+    if target_entity_level == "city":
+        city_value = _identity_value_for_alias(row_identity, ("\u57ce\u5e02", "\u57ce\u5e02\u540d", "city", "鍩庡競"))
+        return city_value not in (None, "")
+    return bool(row_identity)
+
+
+def missing_required_row_identity_fields(row_identity: dict[str, object], target_entity_level: str) -> list[str]:
+    if target_entity_level == "country":
+        country_value = _identity_value_for_alias(row_identity, ("\u56fd\u5bb6/\u5730\u533a", "\u56fd\u5bb6", "\u5730\u533a", "country", "nation", "鍥藉/鍦板尯"))
+        return [] if country_value not in (None, "") else ["\u56fd\u5bb6/\u5730\u533a"]
+    if target_entity_level == "city":
+        city_value = _identity_value_for_alias(row_identity, ("\u57ce\u5e02", "\u57ce\u5e02\u540d", "city", "鍩庡競"))
+        return [] if city_value not in (None, "") else ["\u57ce\u5e02"]
+    return []

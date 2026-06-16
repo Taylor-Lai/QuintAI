@@ -380,3 +380,54 @@ class DefaultTaskPlanner:
             error_policy="strict",
             task_policy=_infer_task_policy(request_text),
         )
+
+
+def _candidate_entity_values(request_text: str, hint: str) -> list[str]:
+    values: list[str] = []
+    quoted = re.findall(r"[\u201c\u201d\"'\u300a\u300b]([^'\"]{1,30})[\u201c\u201d\"'\u300a\u300b]", request_text)
+    values.extend(value.strip() for value in quoted if value.strip())
+
+    if hint == "\u57ce\u5e02":
+        raw_values = re.findall(r"([\u4e00-\u9fff]{2,12}\u5e02)", request_text)
+        for raw in raw_values:
+            value = raw.strip()
+            changed = True
+            while changed:
+                changed = False
+                for prefix in (
+                    "\u8bf7",
+                    "\u7b5b\u9009",
+                    "\u53ea\u7b5b\u9009",
+                    "\u53ea\u4fdd\u7559",
+                    "\u4ec5\u4fdd\u7559",
+                    "\u4fdd\u7559",
+                    "\u53ea\u586b\u5199",
+                    "\u53ea\u586b",
+                    "\u586b\u5199",
+                ):
+                    if value.startswith(prefix) and len(value) > len(prefix):
+                        value = value[len(prefix):]
+                        changed = True
+            city_parts = re.findall(r"(?:^|[\u548c\u4e0e\u53ca\u3001,，\s])([\u4e00-\u9fff]{2,6}?\u5e02)", value)
+            for city in city_parts or [value]:
+                if any(token in city for token in ("\u586b", "\u586b\u5199", "\u5b57\u6bb5", "\u964d\u5e8f", "\u5347\u5e8f", "\u603b\u91cf")):
+                    continue
+                if city in ("\u57ce\u5e02", "\u57ce\u5e02\u540d"):
+                    continue
+                if re.fullmatch(r"[\u4e00-\u9fff]{2,6}\u5e02", city) and city not in values:
+                    values.append(city)
+    elif hint == "\u56fd\u5bb6/\u5730\u533a":
+        for value in ("China", "United States", "USA", "US", "\u4e2d\u56fd", "\u7f8e\u56fd", "\u65e5\u672c", "\u97e9\u56fd", "\u82f1\u56fd", "\u5fb7\u56fd", "\u6cd5\u56fd"):
+            if value.lower() in request_text.lower() and value not in values:
+                values.append(value)
+    elif hint == "\u7701\u4efd":
+        values.extend(re.findall(r"([\u4e00-\u9fff]{2,10}(?:\u7701|\u81ea\u6cbb\u533a|\u76f4\u8f96\u5e02))", request_text))
+    elif hint == "\u7ad9\u70b9\u540d\u79f0":
+        values.extend(re.findall(r"([\u4e00-\u9fffA-Za-z0-9_-]{2,20}(?:\u7ad9|\u76d1\u6d4b\u70b9))", request_text))
+
+    cleaned: list[str] = []
+    for value in values:
+        value = str(value).strip(" ,\u3001\uff0c\u3002\uff1b;")
+        if value and value not in ENTITY_STOPWORDS and value not in cleaned:
+            cleaned.append(value)
+    return cleaned

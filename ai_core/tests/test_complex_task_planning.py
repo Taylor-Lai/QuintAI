@@ -18,7 +18,11 @@ from any2table.core.models import (  # noqa: E402
     TemplateSpec,
 )
 from any2table.extractors import _extract_records_from_row_evidence  # noqa: E402
-from any2table.planners import DefaultTaskPlanner  # noqa: E402
+from any2table.candidates.builders import (  # noqa: E402
+    has_required_row_identity,
+    identity_fields_for_target_fields,
+)
+from any2table.planners import DefaultTaskPlanner, _candidate_entity_values  # noqa: E402
 
 
 def _asset(asset_id: str, role: str = "source") -> FileAsset:
@@ -111,6 +115,28 @@ class ComplexTaskPlanningTests(unittest.TestCase):
 
         self.assertEqual([record.values["AQI"] for record in records], [160, 130])
         self.assertTrue(all(record.values["\u57ce\u5e02"] == "\u5317\u4eac\u5e02" for record in records))
+
+    def test_multi_city_request_splits_entity_values(self) -> None:
+        request = (
+            "\u8bf7\u6839\u636e\u6e90\u6587\u4ef6\u586b\u5199\u6a21\u677f\uff0c"
+            "\u4fdd\u7559\u5317\u4eac\u5e02\u548c\u4e0a\u6d77\u5e02\uff0c"
+            "\u6309GDP\u603b\u91cf\u964d\u5e8f\u586b\u5199\u57ce\u5e02\u540d\u3002"
+        )
+
+        self.assertEqual(
+            _candidate_entity_values(request, "\u57ce\u5e02"),
+            ["\u5317\u4eac\u5e02", "\u4e0a\u6d77\u5e02"],
+        )
+
+    def test_city_name_is_valid_row_identity(self) -> None:
+        fields = [
+            "\u57ce\u5e02\u540d",
+            "GDP\u603b\u91cf\uff08\u4ebf\u5143\uff09",
+            "\u5e38\u4f4f\u4eba\u53e3\uff08\u4e07\u4eba\uff09",
+        ]
+
+        self.assertEqual(identity_fields_for_target_fields(fields), ["\u57ce\u5e02\u540d"])
+        self.assertTrue(has_required_row_identity({"\u57ce\u5e02\u540d": "\u5317\u4eac\u5e02"}, "city"))
 
 
 if __name__ == "__main__":
