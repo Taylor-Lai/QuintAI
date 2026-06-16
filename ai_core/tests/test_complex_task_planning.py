@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 import unittest
+from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
@@ -19,7 +20,8 @@ from any2table.core.models import (  # noqa: E402
     TableHeader,
     TemplateSpec,
 )
-from any2table.agents import _ensure_temporal_schema_for_daily_sources  # noqa: E402
+from any2table.agents import _ensure_temporal_schema_for_daily_sources, _finalize_candidates_by_task  # noqa: E402
+from any2table.candidates.models import CandidateRecord  # noqa: E402
 from any2table.extractors import _extract_records_from_row_evidence  # noqa: E402
 from any2table.candidates.builders import (  # noqa: E402
     _clean_city_value,
@@ -209,7 +211,28 @@ class ComplexTaskPlanningTests(unittest.TestCase):
             ],
         )
 
-        records = _extract_records_from_row_evidence(target_table, task_spec, evidence_pack)
+    def test_country_daily_rows_default_group_by_entity_and_date_without_sort_prompt(self) -> None:
+        fields = [
+            FieldSpec("country", "\u56fd\u5bb6/\u5730\u533a", "\u56fd\u5bb6\u5730\u533a", "string", True),
+            FieldSpec("date", "\u65e5\u671f", "\u65e5\u671f", "date", True),
+            FieldSpec("cases", "\u75c5\u4f8b\u6570", "\u75c5\u4f8b\u6570", "number", False),
+        ]
+        template_spec = TemplateSpec(
+            template_doc_id="template",
+            target_tables=[TargetTableSpec("covid", "\u75ab\u60c5", schema=fields)],
+        )
+        task_spec = DefaultTaskPlanner().plan(_request_doc("\u586b\u5199\u65e5\u7c92\u5ea6\u75ab\u60c5\u6570\u636e\u3002"), template_spec, [])
+        evidence_pack = EvidencePack(
+            task_id="task",
+            items=[
+                EvidenceItem("r1", "row", "doc", {"\u56fd\u5bb6/\u5730\u533a": "Algeria", "\u65e5\u671f": "2020-02-26", "\u75c5\u4f8b\u6570": 2}),
+                EvidenceItem("r2", "row", "doc", {"\u56fd\u5bb6/\u5730\u533a": "Albania", "\u65e5\u671f": "2020-02-27", "\u75c5\u4f8b\u6570": 3}),
+                EvidenceItem("r3", "row", "doc", {"\u56fd\u5bb6/\u5730\u533a": "Albania", "\u65e5\u671f": "2020-02-25", "\u75c5\u4f8b\u6570": 1}),
+                EvidenceItem("r4", "row", "doc", {"\u56fd\u5bb6/\u5730\u533a": "Algeria", "\u65e5\u671f": "2020-02-25", "\u75c5\u4f8b\u6570": 1}),
+            ],
+        )
+
+        records = _extract_records_from_row_evidence(template_spec.target_tables[0], task_spec, evidence_pack)
 
         self.assertEqual(
             [(record.values["\u56fd\u5bb6/\u5730\u533a"], record.values["\u65e5\u671f"]) for record in records],
@@ -220,6 +243,42 @@ class ComplexTaskPlanningTests(unittest.TestCase):
                 ("Algeria", "2020-02-26"),
             ],
         )
+
+    def test_final_candidate_dedup_normalizes_datetime_identity(self) -> None:
+        template_spec = TemplateSpec(
+            template_doc_id="template",
+            target_tables=[
+                TargetTableSpec(
+                    "covid",
+                    "\u75ab\u60c5",
+                    schema=[
+                        FieldSpec("country", "\u56fd\u5bb6/\u5730\u533a", "\u56fd\u5bb6\u5730\u533a", "string", True),
+                        FieldSpec("date", "\u65e5\u671f", "\u65e5\u671f", "date", True),
+                    ],
+                )
+            ],
+        )
+        task_spec = DefaultTaskPlanner().plan(_request_doc("\u586b\u5199\u65e5\u7c92\u5ea6\u6570\u636e\u3002"), template_spec, [])
+        candidates = [
+            CandidateRecord(
+                "rule-1",
+                "covid",
+                {"\u56fd\u5bb6/\u5730\u533a": "Albania", "\u65e5\u671f": datetime(2020, 2, 25)},
+                {"\u56fd\u5bb6/\u5730\u533a": "Albania", "\u65e5\u671f": datetime(2020, 2, 25)},
+            ),
+            CandidateRecord(
+                "agent-1",
+                "covid",
+                {"\u56fd\u5bb6/\u5730\u533a": "Albania", "\u65e5\u671f": "2020-02-25"},
+                {"\u56fd\u5bb6/\u5730\u533a": "Albania", "\u65e5\u671f": "2020-02-25"},
+                confidence=0.9,
+            ),
+        ]
+
+        finalized = _finalize_candidates_by_task(candidates, task_spec)
+
+        self.assertEqual(len(finalized), 1)
+        self.assertEqual(finalized[0].candidate_id, "agent-1")
 
     def test_temporal_schema_augmentation_requires_temporal_request(self) -> None:
         template_spec = _country_template_without_date()

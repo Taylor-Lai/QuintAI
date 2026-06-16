@@ -473,11 +473,46 @@ def _sort_and_limit_candidates(candidates: list[dict[str, object]], filters: dic
                 key=sort_key,
                 reverse=reverse,
             )
+    elif _candidates_have_entity_and_temporal_values(resolved):
+        resolved.sort(key=_default_entity_temporal_sort_key)
 
     limit = filters.get("limit")
     if isinstance(limit, int) and limit > 0:
         resolved = resolved[:limit]
     return resolved
+
+
+def _candidate_temporal_sort_value(values: dict[str, object]) -> str:
+    for field_name, value in values.items():
+        if any(token in _normalize(field_name) for token in TEMPORAL_FIELD_TOKENS):
+            parsed = _parse_date_value(value)
+            if parsed is not None:
+                return parsed.isoformat()
+            return str(value or "")[:10]
+    return ""
+
+
+def _candidates_have_entity_and_temporal_values(candidates: list[dict[str, object]]) -> bool:
+    for candidate in candidates:
+        values = candidate.get("values", {})
+        if not isinstance(values, dict):
+            continue
+        if not _identity_fields_for_target_table_like_values(values):
+            continue
+        if _candidate_temporal_sort_value(values):
+            return True
+    return False
+
+
+def _default_entity_temporal_sort_key(candidate: dict[str, object]):
+    values = candidate.get("values", {})
+    if not isinstance(values, dict):
+        return ("", "")
+    group_key = tuple(
+        str(values.get(identity_field) or "")
+        for identity_field in _identity_fields_for_target_table_like_values(values)
+    )
+    return (*group_key, _candidate_temporal_sort_value(values))
 
 
 def _identity_fields_for_target_table_like_values(values: dict[str, object]) -> list[str]:

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
 from openpyxl import load_workbook
@@ -33,6 +33,24 @@ def _save_with_fallback(save_func, output_path: Path) -> tuple[Path, list[str]]:
         fallback_path = _build_fallback_output_path(output_path)
         save_func(fallback_path)
         return fallback_path, [f"Primary output path was locked, wrote fallback file: {fallback_path}"]
+
+
+def _is_date_field_name(field_name: str) -> bool:
+    normalized = "".join(str(field_name).split()).lower()
+    return any(token in normalized for token in ("日期", "时间", "date", "time"))
+
+
+def _normalize_write_value(field_name: str, value: object) -> object:
+    if not _is_date_field_name(field_name) or value in (None, ""):
+        return value
+    if isinstance(value, datetime):
+        return value.date().isoformat()
+    if isinstance(value, date):
+        return value.isoformat()
+    text = str(value).strip()
+    if len(text) >= 10 and text[4:5] in {"-", "/"} and text[7:8] in {"-", "/"}:
+        return text[:10].replace("/", "-")
+    return value
 
 
 class XlsxWriter:
@@ -68,7 +86,7 @@ class XlsxWriter:
                     header_cell = worksheet.cell(row=header_row_index + 1, column=col_index)
                     if header_cell.value in (None, ""):
                         header_cell.value = field.field_name
-                    value = record.values.get(field.field_name)
+                    value = _normalize_write_value(field.field_name, record.values.get(field.field_name))
                     worksheet.cell(row=row_number, column=col_index, value=value)
                     written_cells.append(
                         CellWriteTrace(
@@ -147,7 +165,7 @@ class DocxTableWriter:
                         header_cell = docx_table.rows[header_row_index].cells[col_index]
                         if not header_cell.text.strip():
                             header_cell.text = field.field_name
-                    value = record.values.get(field.field_name)
+                    value = _normalize_write_value(field.field_name, record.values.get(field.field_name))
                     row.cells[col_index].text = "" if value is None else str(value)
                     written_cells.append(
                         CellWriteTrace(

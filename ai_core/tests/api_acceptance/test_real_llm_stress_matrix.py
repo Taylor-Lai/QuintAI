@@ -10,6 +10,7 @@ import os
 import sys
 import tempfile
 import unittest
+from datetime import datetime
 from pathlib import Path
 
 try:
@@ -259,11 +260,11 @@ class RealLlmStressMatrixTests(unittest.TestCase):
         ws.title = "Data"
         ws.append(source_fields)
         rows = [
-            ("Algeria", "Africa", 28.03, 1.66, 3974, 41318142, "2020-02-26", 269, 2),
-            ("Albania", "Europe", 41.15, 20.17, 5353.2, 2873457, "2020-02-27", 820, 3),
-            ("Algeria", "Africa", 28.03, 1.66, 3974, 41318142, "2020-02-25", 269, 1),
-            ("Albania", "Europe", 41.15, 20.17, 5353.2, 2873457, "2020-02-25", 269, 1),
-            ("Albania", "Europe", 41.15, 20.17, 5353.2, 2873457, "2020-02-26", 820, 2),
+            ("Algeria", "Africa", 28.03, 1.66, 3974, 41318142, datetime(2020, 2, 26), 269, 2),
+            ("Albania", "Europe", 41.15, 20.17, 5353.2, 2873457, datetime(2020, 2, 27), 820, 3),
+            ("Algeria", "Africa", 28.03, 1.66, 3974, 41318142, datetime(2020, 2, 25), 269, 1),
+            ("Albania", "Europe", 41.15, 20.17, 5353.2, 2873457, datetime(2020, 2, 25), 269, 1),
+            ("Albania", "Europe", 41.15, 20.17, 5353.2, 2873457, datetime(2020, 2, 26), 820, 2),
         ]
         for row in rows:
             ws.append(row)
@@ -298,7 +299,7 @@ class RealLlmStressMatrixTests(unittest.TestCase):
             if any(value not in (None, "") for value in row[: len(headers)])
         ]
         self.assertEqual(
-            [(row[0], str(row[date_index])[:10]) for row in filled_rows],
+            [(row[0], str(row[date_index])) for row in filled_rows],
             [
                 ("Albania", "2020-02-25"),
                 ("Albania", "2020-02-26"),

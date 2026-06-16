@@ -86,9 +86,22 @@ def _candidate_entity_group_key(candidate) -> tuple[str, str]:
     return ("", "")
 
 
+def _candidate_has_entity_and_date(candidate) -> bool:
+    entity_key = _candidate_entity_group_key(candidate)
+    if not entity_key[1]:
+        return False
+    return any(_candidate_value(candidate, field_name) not in (None, "") for field_name in ("\u65e5\u671f", "\u65f6\u95f4", "date", "time"))
+
+
 def _is_date_field_name(field_name: str | None) -> bool:
     normalized = _norm_field(field_name or "")
     return any(token in normalized for token in ("\u65e5\u671f", "\u65f6\u95f4", "date", "time"))
+
+
+def _identity_key_value(field_name: str, value: object) -> str:
+    if _is_date_field_name(field_name):
+        return _date_text(value)
+    return str(value)
 
 
 def _task_request_text(task_spec) -> str:
@@ -197,7 +210,8 @@ def _finalize_candidates_by_task(candidates: list, task_spec):
     if filtered_candidates:
         candidates = filtered_candidates
 
-    if not sort_field and not limit:
+    has_daily_identity = any(_candidate_has_entity_and_date(candidate) for candidate in candidates)
+    if not sort_field and not limit and not has_daily_identity:
         return candidates
 
     identity_fields = ["\u57ce\u5e02", "\u56fd\u5bb6/\u5730\u533a", "\u56fd\u5bb6", "\u5730\u533a", "\u7701\u4efd", "\u65e5\u671f", "date", "city"]
@@ -208,7 +222,7 @@ def _finalize_candidates_by_task(candidates: list, task_spec):
         for field_name in identity_fields:
             value = _candidate_value(candidate, field_name)
             if value not in (None, ""):
-                parts.append((_norm_field(field_name), str(value)))
+                parts.append((_norm_field(field_name), _identity_key_value(field_name, value)))
         key = tuple(parts) if len(parts) > 1 else (("__candidate_id__", candidate.candidate_id),)
         previous = deduped_by_key.get(key)
         if previous is None:
@@ -232,6 +246,18 @@ def _finalize_candidates_by_task(candidates: list, task_spec):
             return (*group_key, 1, "" if value is None else str(value))
 
         finalized.sort(key=sort_key, reverse=sort_reverse)
+    elif has_daily_identity:
+        finalized.sort(
+            key=lambda candidate: (
+                *_candidate_entity_group_key(candidate),
+                _date_text(
+                    _candidate_value(candidate, "\u65e5\u671f")
+                    or _candidate_value(candidate, "\u65f6\u95f4")
+                    or _candidate_value(candidate, "date")
+                    or _candidate_value(candidate, "time")
+                ),
+            )
+        )
     if isinstance(limit, int) and limit > 0:
         finalized = finalized[:limit]
     return finalized
