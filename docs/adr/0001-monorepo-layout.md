@@ -1,27 +1,26 @@
-# ADR-0001: Monorepo application and package boundaries
+# ADR-0001：应用与包的 Monorepo 边界
 
-- Status: superseded by ADR-0002
-- Date: 2026-07-22
+- 状态：已由 ADR-0002 废止
+- 日期：2026-07-22
 
-## Context
+## 背景
 
-The original repository mixed the API entry point, database module, service
-modules, frontend, and reusable AI code at the root. Imports depended on the
-current working directory and the API entry point contained every route.
+原始仓库把 API 入口、数据库模块、服务模块、前端和可复用 AI 代码混放在根
+目录。导入行为依赖当前工作目录，API 入口文件还包含了全部路由。
 
-## Decision
+## 决策
 
-Use an application/package monorepo:
+曾决定采用应用/包形式的 Monorepo：
 
-- deployable products live under `apps/`;
-- reusable Python capabilities live under `packages/`;
-- the backend and AI core use installable `src` layouts;
-- API routes are grouped by capability;
-- repository-wide tooling stays at the root;
-- deployment and documentation receive dedicated directories.
+- 可部署产品放在 `apps/`；
+- 可复用 Python 能力放在 `packages/`；
+- 后端与 AI 核心使用可安装的 `src` 布局；
+- API 路由按能力分组；
+- 仓库级工具保留在根目录；
+- 部署文件和文档使用独立目录。
 
-## Consequences
+## 影响
 
-Imports are stable after installation, application boundaries are explicit,
-and independent packaging is possible. Contributors must install both Python
-packages in editable mode for development and keep public route tests current.
+该结构能够稳定导入并明确应用边界，也允许独立发布包；但开发者必须同时安装
+两个 Python 包。由于 AI 实际没有独立消费者和发布周期，该方案随后被
+ADR-0002 取代。

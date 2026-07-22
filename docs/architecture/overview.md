@@ -1,48 +1,46 @@
-# Architecture overview
+# 系统架构
 
-## System boundaries
+## 系统边界
 
 ```mermaid
 flowchart LR
-    Web["frontend<br/>Vue application"] -->|HTTP| API["backend<br/>FastAPI application"]
-    API --> DB[("Configured database")]
-    API --> AI["docnexus.ai<br/>Internal AI capability"]
-    AI --> LLM["Configured LLM provider"]
+    Web["frontend<br/>Vue 应用"] -->|HTTP| API["backend<br/>FastAPI 应用"]
+    API --> DB[("配置的数据库")]
+    API --> AI["docnexus.ai<br/>内部 AI 能力"]
+    AI --> LLM["配置的模型供应商"]
 ```
 
-`frontend` consumes the published HTTP contract. `backend` owns transport,
-authentication, persistence, application orchestration, and server-side AI.
-AI is kept as an internal module because it shares the backend release cycle
-and is not independently published.
+`frontend` 只依赖公开 HTTP 契约。`backend` 负责传输层、身份认证、数据持久化、
+应用编排和服务端 AI。AI 与后端共用发布周期且不独立发布，因此作为后端内部
+模块维护。
 
-## Backend layers
+## 后端分层
 
 ```text
 docnexus/
-├── api/
-│   ├── dependencies.py      # Authentication and authorization dependencies
-│   ├── router.py            # Router composition
-│   └── routes/              # One module per HTTP capability
-├── ai/
-│   ├── workflows.py         # Stable AI workflow facade used by routes
-│   ├── contracts.py         # AI workflow input and output contracts
-│   ├── knowledge_graph/     # Knowledge graph domain
-│   └── table_engine/        # Parsing, retrieval, filling, and verification
-├── core/                    # Settings and security primitives
-├── db/                      # Models, sessions, bootstrap, and migration support
-├── repositories/            # Persistence operations
-├── schemas/                 # HTTP transport contracts
-├── services/                # Application services
-└── main.py                  # Application factory and static-file integration
+|-- api/
+|   |-- dependencies.py      # 身份认证与授权依赖
+|   |-- router.py            # 路由聚合
+|   `-- routes/              # 按 HTTP 能力拆分的路由模块
+|-- ai/
+|   |-- workflows.py         # 路由调用的稳定 AI 工作流门面
+|   |-- contracts.py         # AI 工作流输入输出契约
+|   |-- knowledge_graph/     # 知识图谱领域
+|   `-- table_engine/        # 解析、检索、填表与校验流水线
+|-- core/                    # 配置与安全基础能力
+|-- db/                      # 模型、会话、初始化和迁移兼容
+|-- repositories/            # 持久化操作
+|-- schemas/                 # HTTP 传输契约
+|-- services/                # 应用服务
+`-- main.py                  # 应用工厂与静态资源集成
 ```
 
-Dependency direction is inward: routes call services, repositories, and the
-AI workflow facade; repositories call the database layer. AI modules do not
-import FastAPI route modules or frontend code.
+依赖方向由外向内：路由可以调用应用服务、仓储和 AI 工作流门面；仓储调用数据库
+层。AI 模块不得导入 FastAPI 路由或前端代码。
 
-## Compatibility guarantees
+## 兼容性保证
 
-- Existing public API paths are protected by a route-contract test.
-- Existing frontend routes and request payloads are preserved.
-- The development database default remains `./doc_system.db`.
-- Production database location is configured through `DATABASE_URL`.
+- 路由契约测试保护现有公开 API 路径；
+- 保留现有前端路由和请求数据结构；
+- 开发数据库默认仍为 `./doc_system.db`；
+- 生产数据库位置通过 `DATABASE_URL` 配置。

@@ -1,13 +1,15 @@
-# Security policy
+# 安全策略
 
-Do not report credentials, production data, or exploitable details in public
-issue content. Share security findings privately with the repository owner and
-include the affected revision, reproduction steps, impact, and a suggested
-mitigation when available.
+请勿在公开 Issue 中提交凭据、生产数据或可直接利用的漏洞细节。安全问题应私下
+告知仓库维护者，并尽可能提供受影响版本、复现步骤、影响范围和修复建议。
 
-Production deployments must provide a random `SECRET_KEY` of at least 32
-characters, restrict `CORS_ORIGINS`, inject model-provider credentials through
-a secret manager, and use a managed database for horizontally scaled services.
+生产环境必须：
 
-Never commit `.env`, database files, uploaded documents, generated reports,
-private keys, or provider responses containing user data.
+- 使用至少 32 个字符的随机 `SECRET_KEY`；
+- 严格限制 `CORS_ORIGINS`；
+- 通过密钥管理服务注入模型供应商凭据；
+- 多实例部署时使用托管关系型数据库，不共享 SQLite 文件；
+- 对上传文档、模型响应和生成报告实施访问控制与生命周期管理。
+
+严禁提交 `.env`、数据库文件、用户上传文档、生成报告、私钥或包含用户数据的
+模型供应商响应。

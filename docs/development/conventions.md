@@ -1,25 +1,26 @@
-# Repository conventions
+# 仓库工程规范
 
-## Naming
+## 命名规则
 
-- Python packages and modules: `snake_case`.
-- Python classes: `PascalCase`; functions and variables: `snake_case`.
-- Vue components and views: `PascalCase.vue`; routed pages end in `View.vue`.
-- JavaScript modules: lower-case domain nouns such as `auth.js` and `user.js`.
-- Tests: `test_<behavior>.py`; test functions describe observable behavior.
-- Environment variables: `UPPER_SNAKE_CASE` and documented in `.env.example`.
+- Python 包和模块使用 `snake_case`；
+- Python 类使用 `PascalCase`，函数和变量使用 `snake_case`；
+- Vue 组件和页面使用 `PascalCase.vue`，路由页面以 `View.vue` 结尾；
+- JavaScript 模块使用小写领域名，例如 `auth.js`、`user.js`；
+- 测试文件使用 `test_<behavior>.py`，测试函数描述可观察行为；
+- 环境变量使用 `UPPER_SNAKE_CASE`，并在 `.env.example` 中记录。
 
-## Placement rules
+## 文件放置规则
 
-- HTTP parsing, status codes, and FastAPI dependencies belong in `api/`.
-- Security primitives and settings belong in `core/`.
-- SQL queries belong in `repositories/`; sessions and models belong in `db/`.
-- Cross-domain application operations belong in `services/`.
-- AI workflows and algorithms belong in `docnexus.ai` and cannot import API routes.
-- Runtime data, reports, caches, environments, dependencies, and builds are not committed.
+- HTTP 参数解析、状态码和 FastAPI 依赖放在 `api/`；
+- 安全基础能力和配置放在 `core/`；
+- SQL 查询放在 `repositories/`，会话与模型放在 `db/`；
+- 跨领域应用操作放在 `services/`；
+- AI 工作流与算法放在 `docnexus.ai`，不得导入 API 路由；
+- 运行数据、报告、缓存、环境、依赖目录和构建产物不得提交。
 
-## Change requirements
+## 变更要求
 
-Every public API change must update route-contract or acceptance tests. Every
-new configuration key must be added to `.env.example`. Architecture boundary
-changes require an ADR under `docs/adr/`.
+- 公开 API 变更必须更新路由契约测试或验收测试；
+- 新增配置项必须同步更新 `.env.example`；
+- 架构边界发生变化时，必须在 `docs/adr/` 新增 ADR；
+- 用户和开发者文档默认使用中文，代码标识、标准协议和工具固定声明除外。

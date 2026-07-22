@@ -1,28 +1,29 @@
-# Deployment guide
+# 部署指南
 
-## Container build
+## 构建容器
 
 ```powershell
-docker build -f deploy/docker/Dockerfile -t docnexus:latest .
+docker build -f deploy/docker/Dockerfile -t quintai:latest .
 ```
 
-The image uses a Node builder stage and a Python runtime stage. The runtime
-contains only compiled web assets, the integrated backend package, and Python
-dependencies.
+镜像使用 Node 构建阶段和 Python 运行阶段。最终运行镜像只包含编译后的前端、
+一体化后端包和 Python 运行依赖。
 
-## Compose
+## 使用 Compose
 
 ```powershell
 Copy-Item .env.example .env
 docker compose up --build -d
 ```
 
-Before production deployment, set a random `SECRET_KEY` of at least 32
-characters, restrict `CORS_ORIGINS`, configure provider credentials, and use
-managed secret injection rather than committing `.env`.
+生产部署前应完成以下配置：
 
-The default Compose service persists SQLite under `/app/data`. For multiple
-application replicas, configure `DATABASE_URL` for a managed relational
-database instead of sharing SQLite.
+- 设置至少 32 个字符的随机 `SECRET_KEY`；
+- 严格限制 `CORS_ORIGINS`；
+- 配置模型供应商凭据；
+- 使用托管密钥注入，不提交 `.env`。
 
-Health probe endpoint: `GET /health`.
+默认 Compose 服务将 SQLite 数据持久化到 `/app/data`。多实例部署应通过
+`DATABASE_URL` 配置托管关系型数据库，不得让多个实例共享 SQLite 文件。
+
+健康检查接口：`GET /health`。

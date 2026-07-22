@@ -1,12 +1,12 @@
-# Development setup
+# 开发环境配置
 
-## Prerequisites
+## 环境要求
 
-- A local Anaconda installation with Python 3.11 support.
-- Node.js 20.19+ or 22.12+ and npm.
-- Docker Desktop only for container validation.
+- 本地 Anaconda，支持 Python 3.11；
+- Node.js 20.19+ 或 22.12+，以及 npm；
+- 仅在验证容器时需要 Docker Desktop。
 
-## Python environment
+## Python 环境
 
 ```powershell
 conda create -n wangtiao-engineering python=3.11 pip -y
@@ -15,15 +15,15 @@ python -m pip install -r requirements/dev.txt
 python -m pip install --no-deps -e backend
 ```
 
-Alternatively, run `conda env create -f environment.yml` from the repository
-root. The editable install makes the single `docnexus` package importable.
+也可以在仓库根目录执行 `conda env create -f environment.yml`。editable 安装会
+使单一 `docnexus` 包可直接导入，并让本地源码修改立即生效。
 
-## Configuration
+## 配置
 
-Copy `.env.example` to `.env`. Development requires `SECRET_KEY` for login and
-the selected `LLM_PROVIDER` credential when exercising AI endpoints.
+将 `.env.example` 复制为 `.env`。登录功能需要 `SECRET_KEY`；调用 AI 接口时还
+需要为所选 `LLM_PROVIDER` 配置凭据。
 
-## Common commands
+## 常用命令
 
-The `scripts/` directory provides repeatable PowerShell entry points. Commands
-can also be executed directly as documented in the root README.
+`scripts/` 提供可重复执行的 PowerShell 入口。也可以直接运行根 README 中记录
+的各项命令。

@@ -1,13 +1,14 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "docnexus-backend"
 version = "1.0.0"
-description = "FastAPI application for DocNexus document automation."
+description = "QuintAI 文档智能处理后端"
 readme = "README.md"
 requires-python = ">=3.11"
+license = "MIT"
 
 [project.scripts]
 any2table = "docnexus.ai.table_engine.cli:main"

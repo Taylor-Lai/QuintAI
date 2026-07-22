@@ -1,13 +1,14 @@
-# Manual QA scenarios
+# 人工验收测试
 
-This directory contains the end-to-end test documents retained from the
-migrated GitHub repository. They cover:
+本目录保留从迁移前仓库继承的端到端测试文档，覆盖以下能力：
 
-- document editing and formatting;
-- unstructured document information extraction;
-- custom table filling with multiple source and template formats.
+- 文档编辑与格式调整；
+- 非结构化文档信息提取；
+- 使用多种来源文件和模板进行自定义表格填充。
 
-Each Chinese-named scenario directory contains its own `README.md`, input
-documents, user requirements, templates, and expected manually filled output
-where applicable. These files are product QA fixtures, not generated build
-artifacts.
+各中文场景目录包含独立 `README.md`、输入文档、用户要求、模板，以及适用时
+提供的人工填写预期结果。这些文件属于产品质量验收资料，不是构建中间产物。
+
+本目录可能包含来源于第三方的报告、数据集或办公文档。除非文件自身明确声明，
+根目录的 MIT License 不表示项目维护者拥有这些资料的再许可权；使用者应遵守
+原始来源的版权、数据许可和使用限制。详见仓库根目录 [NOTICE](../../NOTICE)。

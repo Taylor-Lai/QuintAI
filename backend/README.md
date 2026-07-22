@@ -1,27 +1,28 @@
-# DocNexus backend
+# QuintAI 后端
 
-The backend is one installable Python distribution named `docnexus-backend`
-and exposes the `docnexus` package. It contains the HTTP application,
-persistence layer, application services, and internal AI capabilities.
+后端是名为 `docnexus-backend` 的单一可安装 Python 发行包，对外提供
+`docnexus` 包。它包含 HTTP 应用、持久化层、应用服务和内部 AI 能力。
 
 ```text
 src/docnexus/
-├── api/                     # FastAPI routing and request dependencies
-├── ai/                      # Document intelligence and table engine
-├── core/                    # Configuration and security primitives
-├── db/                      # SQLAlchemy models, sessions, and bootstrap
-├── repositories/            # Persistence operations
-├── schemas/                 # Transport contracts
-├── services/                # Application-level orchestration
-└── main.py                  # ASGI application factory
+|-- api/                     # FastAPI 路由和请求依赖
+|-- ai/                      # 文档智能与表格处理引擎
+|-- core/                    # 配置与安全基础能力
+|-- db/                      # SQLAlchemy 模型、会话和初始化逻辑
+|-- repositories/            # 持久化操作
+|-- schemas/                 # HTTP 数据契约
+|-- services/                # 应用层编排
+`-- main.py                  # ASGI 应用工厂
 ```
 
-From the repository root, install and run it with:
+在仓库根目录安装并启动：
 
 ```powershell
 python -m pip install --no-deps -e backend
 uvicorn docnexus.main:app --reload
 ```
 
-The optional `any2table` console command remains available for direct table
-pipeline execution, but its implementation is internal to `docnexus.ai`.
+项目保留了可选的 `any2table` 命令行入口，用于直接执行表格处理流水线；其实现
+仍是 `docnexus.ai` 的内部模块，不作为独立包发布。
+
+许可证： [MIT License](../LICENSE)。

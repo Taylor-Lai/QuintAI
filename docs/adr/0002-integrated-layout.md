@@ -1,25 +1,22 @@
-# ADR-0002: Integrated backend and frontend boundaries
+# ADR-0002：一体化前后端边界
 
-- Status: accepted
-- Date: 2026-07-22
+- 状态：已采纳
+- 日期：2026-07-22
 
-## Context
+## 背景
 
-The AI capabilities and FastAPI application are developed, tested, deployed,
-and versioned together. An `apps/` and `packages/` monorepo split added package
-boundaries without an independent consumer or publication lifecycle.
+AI 能力与 FastAPI 应用共同开发、测试、部署和版本管理。采用 `apps/` 与
+`packages/` 拆分会引入额外包边界，但没有独立消费者或独立发布周期支撑该
+复杂度。
 
-## Decision
+## 决策
 
-Use top-level `backend/` and `frontend/` deployable boundaries. Package all
-server-side code under the single `docnexus` namespace and place AI domains
-under `docnexus.ai`. Keep the backend's `src` layout, capability-based API
-routes, layered persistence, repository-wide tooling, and dedicated deployment
-and documentation directories.
+使用顶层 `backend/` 和 `frontend/` 表达两个部署边界。全部服务端代码归入单一
+`docnexus` 命名空间，AI 领域位于 `docnexus.ai`。继续保留后端 `src` 布局、按
+能力拆分的 API 路由、分层持久化、仓库级工具，以及独立部署和文档目录。
 
-## Consequences
+## 影响
 
-Developers install one Python distribution and imports express the actual
-ownership model. Backend and AI changes ship together. If a real independent
-consumer or release cadence emerges later, the AI module can be extracted
-behind its existing workflow facade.
+开发者只需安装一个 Python 发行包，导入关系也与真实所有权一致。后端和 AI
+变更共同发布。如果未来出现真实的独立消费者或发布周期，可以通过现有工作流
+门面重新提取 AI 模块。
