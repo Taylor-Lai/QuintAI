@@ -4,6 +4,7 @@
 - [Repository conventions](development/conventions.md)
 - [Development setup](development/setup.md)
 - [Deployment guide](operations/deployment.md)
+- [Manual QA scenarios](../tests/manual/README.md)
 - [ADR-0001: monorepo application and package boundaries (superseded)](adr/0001-monorepo-layout.md)
 - [ADR-0002: integrated backend and frontend boundaries](adr/0002-integrated-layout.md)
 - [Contribution guide](../CONTRIBUTING.md)

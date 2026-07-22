@@ -16,6 +16,7 @@ extraction, and multi-source table filling.
 ├── docs/                    # Architecture, development, operations, and ADRs
 ├── requirements/            # Python dependency sets
 ├── scripts/                 # Repeatable PowerShell workflows
+├── tests/manual/            # Cross-system manual QA scenarios and fixtures
 ├── compose.yaml
 ├── environment.yml          # Local Anaconda environment definition
 └── pyproject.toml           # Repository-wide test and lint configuration
@@ -66,6 +67,9 @@ npm run build
 
 Real-provider tests live under `backend/tests/acceptance`, are marked
 `api_acceptance`, and require valid credentials in `.env`.
+
+Manual end-to-end scenarios and their source/template files are retained under
+`tests/manual`. Each scenario contains its own Chinese usage instructions.
 
 ## Container deployment
 
