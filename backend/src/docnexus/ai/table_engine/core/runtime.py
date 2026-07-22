@@ -38,6 +38,7 @@ class AgentState:
     user_request_doc: CanonicalDocument | None = None
     source_docs: list[CanonicalDocument] = field(default_factory=list)
     task_spec: TaskSpec | None = None
+    task_understanding_result: dict[str, object] = field(default_factory=dict)
     template_spec: TemplateSpec | None = None
     evidence_pack: EvidencePack | None = None
     selected_route: str = "direct"
@@ -48,6 +49,9 @@ class AgentState:
     merged_candidates: list[CandidateRecord] = field(default_factory=list)
     rejected_candidates: list[CandidateRecord] = field(default_factory=list)
     candidate_merge_warnings: list[str] = field(default_factory=list)
+    task_plan_applied_operations: list[str] = field(default_factory=list)
+    task_plan_skipped_operations: list[str] = field(default_factory=list)
+    task_plan_execution_warnings: list[str] = field(default_factory=list)
     records: list[StructuredRecord] = field(default_factory=list)
     fill_result: FillResult | None = None
     verification_report: VerificationReport | None = None
@@ -116,6 +120,7 @@ class AgentState:
         model: str | None = None,
         response_preview: str | None = None,
         error: str | None = None,
+        metrics: dict[str, object] | None = None,
     ) -> None:
         payload: dict[str, object] = {
             "agent": agent,
@@ -128,6 +133,8 @@ class AgentState:
             payload["response_preview"] = response_preview
         if error:
             payload["error"] = error
+        if metrics:
+            payload["metrics"] = dict(metrics)
         self.llm_runs.append(payload)
 
     def clear_intermediate(self, *, max_log_entries: int = 200) -> None:

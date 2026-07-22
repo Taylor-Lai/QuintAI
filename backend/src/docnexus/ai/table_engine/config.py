@@ -32,6 +32,8 @@ class AppConfig:
     llm_model: str = "gpt-4o-mini"
     llm_base_url: str | None = None
     llm_api_key_env: str = "OPENAI_API_KEY"
+    llm_timeout_seconds: float = 90.0
+    llm_max_retries: int = 2
     output_dir: str = "outputs"
     enable_intermediate_dump: bool = False
     intermediate_root: str = "workspace/cache"

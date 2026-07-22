@@ -18,7 +18,7 @@ DATE_RANGE_PATTERN = re.compile(
 SINGLE_DATE_PATTERN = re.compile(CN_DATE, re.IGNORECASE)
 ISO_DATETIME_PATTERN = re.compile(r"(\d{4}-\d{1,2}-\d{1,2}\s+\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?)")
 TOP_N_PATTERN = re.compile(
-    r"(?:top|\u524d|\u53d6\u524d|\u6700\u9ad8|\u6700\u4f4e|\u6392\u540d\u524d|\u6392\u884c\u524d)\s*(\d+)",
+    r"(?:top|\u524d|\u53d6\u524d|\u6700\u9ad8|\u6700\u4f4e|\u6392\u540d\u524d|\u6392\u884c\u524d)\s*([0-9\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341]+)",
     re.IGNORECASE,
 )
 COMPARISON_PATTERN = re.compile(
@@ -231,7 +231,7 @@ def _extract_entity_constraints(user_request_doc: CanonicalDocument, request_tex
 
 
 def _comparison_operator(raw_operator: str) -> str:
-    if raw_operator in {">=", "\u5927\u4e8e\u7b49\u4e8e", "\u4e0d\u5c0f\u4e8e"}:
+    if raw_operator in {">=", "\u5927\u4e8e\u7b49\u4e8e", "\u4e0d\u5c0f\u4e8e", "不低于"}:
         return ">="
     if raw_operator in {"<=", "\u5c0f\u4e8e\u7b49\u4e8e", "\u4e0d\u5927\u4e8e"}:
         return "<="
@@ -242,25 +242,44 @@ def _comparison_operator(raw_operator: str) -> str:
     return "=="
 
 
+def _parse_positive_integer(value: str) -> int | None:
+    if value.isdigit():
+        return int(value)
+    digits = {"一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9}
+    if value == "十":
+        return 10
+    if "十" in value:
+        left, right = value.split("十", 1)
+        tens = digits.get(left, 1) if left else 1
+        ones = digits.get(right, 0) if right else 0
+        return tens * 10 + ones
+    return digits.get(value)
+
+
 def _extract_comparison_constraints(user_request_doc: CanonicalDocument, request_text: str, target_fields: list[str]) -> list[Constraint]:
     constraints: list[Constraint] = []
-    for index, match in enumerate(COMPARISON_PATTERN.finditer(request_text)):
-        raw_field, raw_operator, raw_value = match.groups()
-        target_field = _resolve_target_field(raw_field, target_fields)
-        if target_field is None:
-            continue
-        value_text = raw_value.replace(",", "")
-        value: int | float = float(value_text) if "." in value_text else int(value_text)
-        constraints.append(
-            Constraint(
-                constraint_id=f"{user_request_doc.doc_id}#filter-{index}",
-                source="user_request",
-                kind="field_filter",
-                field=target_field,
-                operator=_comparison_operator(raw_operator),
-                value=value,
-            )
+    operator_pattern = (
+        r"(>=|<=|>|<|=|==|大于等于|不小于|不低于|小于等于|不大于|大于|高于|超过|小于|低于|少于|等于|为|is)"
+    )
+    for target_field in sorted(target_fields, key=len, reverse=True):
+        pattern = re.compile(
+            rf"{re.escape(target_field)}\s*{operator_pattern}\s*(-?\d+(?:,\d{{3}})*(?:\.\d+)?)",
+            re.IGNORECASE,
         )
+        for match in pattern.finditer(request_text):
+            raw_operator, raw_value = match.groups()
+            value_text = raw_value.replace(",", "")
+            value: int | float = float(value_text) if "." in value_text else int(value_text)
+            constraints.append(
+                Constraint(
+                    constraint_id=f"{user_request_doc.doc_id}#filter-{len(constraints)}",
+                    source="user_request",
+                    kind="field_filter",
+                    field=target_field,
+                    operator=_comparison_operator(raw_operator),
+                    value=value,
+                )
+            )
     return constraints
 
 
@@ -295,6 +314,9 @@ def _extract_sort_and_limit_constraints(user_request_doc: CanonicalDocument, req
 
     top_match = TOP_N_PATTERN.search(request_text)
     if top_match:
+        limit = _parse_positive_integer(top_match.group(1))
+        if limit is None:
+            return constraints
         constraints.append(
             Constraint(
                 constraint_id=f"{user_request_doc.doc_id}#limit",
@@ -302,7 +324,7 @@ def _extract_sort_and_limit_constraints(user_request_doc: CanonicalDocument, req
                 kind="limit",
                 field=None,
                 operator="top",
-                value=int(top_match.group(1)),
+                value=limit,
             )
         )
     return constraints

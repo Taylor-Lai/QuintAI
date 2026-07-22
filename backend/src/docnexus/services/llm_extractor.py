@@ -8,8 +8,12 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # 读取配置
-PROVIDER = os.getenv("LLM_PROVIDER", "zhipu")
+PROVIDER = os.getenv("LLM_PROVIDER", "openai")
+OPENAI_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 ZHIPU_KEY = os.getenv("ZHIPU_API_KEY")
+ZHIPU_MODEL = os.getenv("ZHIPU_MODEL", "glm-4-flash")
 ALIYUN_KEY = os.getenv("DASHSCOPE_API_KEY")
 
 
@@ -46,12 +50,13 @@ class LLMExtractor:
         """
 
         try:
+            if PROVIDER == "openai":
+                return LLMExtractor._call_openai(prompt)
             if PROVIDER == "zhipu":
                 return LLMExtractor._call_zhipu(prompt)
-            elif PROVIDER == "aliyun":
+            if PROVIDER == "aliyun":
                 return LLMExtractor._call_aliyun(prompt)
-            else:
-                raise ValueError(f"未知的模型提供商: {PROVIDER}")
+            raise ValueError(f"未知的模型提供商: {PROVIDER}")
 
         except Exception as e:
             return {"error": str(e), "raw_text": text[:200]}
@@ -64,7 +69,7 @@ class LLMExtractor:
         client = ZhipuAI(api_key=ZHIPU_KEY)
 
         response = client.chat.completions.create(
-            model="glm-4-flash",  # 使用快速模型
+            model=ZHIPU_MODEL,
             messages=[
                 {"role": "system", "content": "你是一个JSON提取专家，只输出JSON。"},
                 {"role": "user", "content": prompt},
@@ -74,6 +79,25 @@ class LLMExtractor:
 
         content = response.choices[0].message.content
         # 清理可能存在的 markdown 标记
+        content = content.replace("```json", "").replace("```", "").strip()
+        return json.loads(content)
+
+    @staticmethod
+    def _call_openai(prompt: str) -> Dict:
+        """调用 OpenAI 兼容接口。"""
+        from openai import OpenAI
+
+        client = OpenAI(api_key=OPENAI_KEY, base_url=OPENAI_BASE_URL or None)
+        response = client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=[
+                {"role": "system", "content": "你是一个JSON提取专家，只输出JSON。"},
+                {"role": "user", "content": prompt},
+            ],
+            response_format={"type": "json_object"},
+            temperature=0.1,
+        )
+        content = response.choices[0].message.content or "{}"
         content = content.replace("```json", "").replace("```", "").strip()
         return json.loads(content)
 

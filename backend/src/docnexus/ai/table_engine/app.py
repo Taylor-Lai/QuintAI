@@ -8,6 +8,7 @@ from docnexus.ai.table_engine.agents import (
     CoderAgent,
     MasterAgent,
     RAGAgent,
+    RepairAgent,
     RetrievalAgent,
     RouterAgent,
     TableAgent,
@@ -66,14 +67,17 @@ def build_registry(config: AppConfig | None = None) -> ComponentRegistry:
 
 
 def build_agent_runtime(registry: ComponentRegistry) -> GraphRuntime | LangGraphRuntime:
+    coder_agent = CoderAgent(registry)
+    verifier_agent = VerifierAgent(registry)
     nodes = [
         ("master", MasterAgent(registry)),
         ("table_agent", TableAgent(registry)),
         ("router_agent", RouterAgent(registry)),
         ("retrieval_agent", RetrievalAgent(registry)),
         ("rag_agent", RAGAgent(registry)),
-        ("coder_agent", CoderAgent(registry)),
-        ("verifier_agent", VerifierAgent(registry)),
+        ("coder_agent", coder_agent),
+        ("verifier_agent", verifier_agent),
+        ("repair_agent", RepairAgent(registry, coder_agent, verifier_agent)),
     ]
     if registry.config.agent_runtime_backend == "langgraph":
         return LangGraphRuntime(nodes)

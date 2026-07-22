@@ -149,9 +149,17 @@ class HybridRagBackend(BaseRagBackend):
         selected_items = ranked_items[:selected_count]
         supporting_items = ranked_items[selected_count : selected_count + min(10, max(0, len(ranked_items) - selected_count))]
 
+        active_entries: list[_RankedEvidence] = []
+        active_ids: set[str] = set()
+        mandatory_structured = [entry for entry in ranked_items if entry.item.evidence_type in {"row", "table"}]
+        for entry in [*mandatory_structured, *selected_items, *supporting_items]:
+            if entry.item.evidence_id in active_ids:
+                continue
+            active_ids.add(entry.item.evidence_id)
+            active_entries.append(entry)
         reranked_pack = EvidencePack(
             task_id=evidence_pack.task_id,
-            items=[self._clone_item(entry) for entry in ranked_items],
+            items=[self._clone_item(entry) for entry in active_entries],
             retrieval_logs=[*evidence_pack.retrieval_logs],
             coverage={**evidence_pack.coverage},
         )
@@ -163,7 +171,9 @@ class HybridRagBackend(BaseRagBackend):
                 "target_fields": query_summary["target_fields"],
                 "selected_count": len(selected_items),
                 "supporting_count": len(supporting_items),
-                "reranked_only": True,
+                "reranked_only": False,
+                "original_evidence_count": len(ranked_items),
+                "active_evidence_count": len(active_entries),
             }
         )
         reranked_pack.coverage.update(
@@ -183,8 +193,8 @@ class HybridRagBackend(BaseRagBackend):
                     field_evidence_map[field_name].append(entry.item.evidence_id)
 
         notes = [
-            "Hybrid RAG reranked evidence using schema-aware lexical and metadata signals.",
-            "Current backend keeps the full evidence pack and exposes selected ids for future narrowing.",
+            "Hybrid RAG selected an active evidence window using schema-aware lexical and metadata signals.",
+            f"Kept all structured rows and reduced the total evidence pack from {len(ranked_items)} to {len(active_entries)} item(s).",
         ]
         return RagResult(
             route=route,

@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 from pathlib import Path
+from time import perf_counter
 
 from docnexus.ai.table_engine.config import AppConfig
 from docnexus.ai.table_engine.llm.models import LlmResponse
@@ -72,9 +73,19 @@ class OpenAiLlmClient:
         self.provider = config.llm_provider
         self.model = config.llm_model
         self.base_url = _normalize_base_url(config.llm_base_url)
+        self.last_metrics: dict[str, object] = {}
         api_key = os.getenv(config.llm_api_key_env)
         self.is_available = OpenAI is not None and bool(api_key)
-        self._client = OpenAI(api_key=api_key, base_url=self.base_url) if self.is_available else None
+        self._client = (
+            OpenAI(
+                api_key=api_key,
+                base_url=self.base_url,
+                timeout=config.llm_timeout_seconds,
+                max_retries=config.llm_max_retries,
+            )
+            if self.is_available
+            else None
+        )
 
         if OpenAI is None:
             logger.warning("openai package is not installed; LLM skills will be unavailable")
@@ -87,6 +98,7 @@ class OpenAiLlmClient:
         if not self.is_available or self._client is None:
             raise RuntimeError("OpenAI-compatible LLM client is not available. Check dependency and API key.")
 
+        started_at = perf_counter()
         response = self._client.chat.completions.create(
             model=self.model,
             messages=[
@@ -96,6 +108,14 @@ class OpenAiLlmClient:
             response_format={"type": "json_object"},
         )
         raw_content = response.choices[0].message.content
+        usage = getattr(response, "usage", None)
+        self.last_metrics = {
+            "duration_ms": round((perf_counter() - started_at) * 1000, 2),
+            "input_tokens": getattr(usage, "prompt_tokens", None),
+            "output_tokens": getattr(usage, "completion_tokens", None),
+            "total_tokens": getattr(usage, "total_tokens", None),
+            "response_model": getattr(response, "model", None),
+        }
         if raw_content is None:
             logger.warning("LLM returned None content; defaulting to empty JSON object")
         content = raw_content or "{}"

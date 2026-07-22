@@ -141,6 +141,26 @@ class TemplateSpec(DictSerializable):
 
 
 @dataclass(slots=True)
+class TaskOperation(DictSerializable):
+    operation_id: str
+    op: str
+    inputs: list[str] = field(default_factory=list)
+    output: str | None = None
+    params: dict[str, object] = field(default_factory=dict)
+    depends_on: list[str] = field(default_factory=list)
+
+
+@dataclass(slots=True)
+class TaskPlan(DictSerializable):
+    version: str = "2.0"
+    operations: list[TaskOperation] = field(default_factory=list)
+    unresolved: list[str] = field(default_factory=list)
+    source: str = "deterministic"
+    validation_errors: list[str] = field(default_factory=list)
+    validation_warnings: list[str] = field(default_factory=list)
+
+
+@dataclass(slots=True)
 class TaskSpec(DictSerializable):
     task_id: str
     intent: str
@@ -153,6 +173,7 @@ class TaskSpec(DictSerializable):
     allow_empty_output: bool = False
     error_policy: str = "strict"
     task_policy: str = "all_dates"
+    task_plan: TaskPlan | None = None
 
 
 @dataclass(slots=True)

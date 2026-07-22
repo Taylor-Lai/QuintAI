@@ -60,6 +60,8 @@ def _write_fill_run_report(work_dir: Path, task_id: str, result) -> Path:
         ],
         "task_constraints": debug.get("task_constraints", []),
         "task_policy": debug.get("task_policy"),
+        "task_plan": debug.get("task_plan"),
+        "task_plan_execution": debug.get("task_plan_execution"),
         "output_path": result.fill_result.output_path,
         "verification_status": result.verification_report.status,
         "verification_summary": result.verification_report.summary,
@@ -145,7 +147,7 @@ def handle_table_filling(
 
         orchestrator = build_orchestrator(config=config)
         if progress_callback:
-            progress_callback(input_data.task_id, "processing", "Running 7-agent LangGraph orchestration.")
+            progress_callback(input_data.task_id, "processing", "Running multi-agent LangGraph orchestration.")
 
         result = orchestrator.run(assets)
         report_path = _write_fill_run_report(work_dir, input_data.task_id, result)
@@ -153,6 +155,13 @@ def handle_table_filling(
             progress_callback(input_data.task_id, "success", "Table filling and verification completed.")
 
         warnings = list(result.fill_result.warnings)
+        if result.verification_report.status == "fail":
+            return Mod3_FusionOutput(
+                status="failed",
+                task_id=input_data.task_id,
+                error_msg=result.verification_report.summary,
+                warnings=[*warnings, f"fill_run_report={report_path}"],
+            )
         if result.verification_report.status != "pass":
             warnings.append(result.verification_report.summary)
         warnings.append(f"fill_run_report={report_path}")

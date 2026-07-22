@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-LLM_PROVIDER = os.getenv("LLM_PROVIDER", "zhipu")
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "openai")
 ZHIPU_API_KEY = os.getenv("ZHIPU_API_KEY")
 ZHIPU_BASE_URL = os.getenv("ZHIPU_BASE_URL", "https://open.bigmodel.cn/api/paas/v4")
 ZHIPU_MODEL = os.getenv("ZHIPU_MODEL", "glm-4-flash")

@@ -170,6 +170,7 @@ class MultiAgentOrchestrator:
                 for constraint in (state.task_spec.constraints if state.task_spec else [])
             ],
             "task_policy": state.task_spec.task_policy if state.task_spec else None,
+            "task_plan": state.task_spec.task_plan.to_dict() if state.task_spec and state.task_spec.task_plan else None,
             "target_fields": list(state.task_spec.target_fields) if state.task_spec else [],
             "record_count": len(state.records),
             "evidence_count": len(state.evidence_pack.items),
@@ -188,6 +189,11 @@ class MultiAgentOrchestrator:
             "merged_candidate_count": len(state.merged_candidates),
             "rejected_candidate_count": len(state.rejected_candidates),
             "candidate_merge_warning_count": len(state.candidate_merge_warnings),
+            "task_plan_execution": {
+                "applied_operations": list(state.task_plan_applied_operations),
+                "skipped_operations": list(state.task_plan_skipped_operations),
+                "warnings": list(state.task_plan_execution_warnings),
+            },
         }
         if self.registry.config.enable_intermediate_dump and state.template_spec is not None and state.task_spec is not None:
             debug["intermediate"] = dump_intermediate_artifacts(

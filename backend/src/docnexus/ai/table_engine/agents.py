@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+from copy import deepcopy
 
 from docnexus.ai.table_engine.candidates.builders import (
     build_agent_candidates_from_skill_result,
@@ -14,8 +15,10 @@ from docnexus.ai.table_engine.candidates.builders import (
 )
 from docnexus.ai.table_engine.core.models import Constraint, FieldSpec, VerificationCheck
 from docnexus.ai.table_engine.core.runtime import AgentState
+from docnexus.ai.table_engine.execution import TaskPlanExecutor, build_source_datasets
 from docnexus.ai.table_engine.indexing.build_units import build_retrieval_units
 from docnexus.ai.table_engine.merging import merge_candidates
+from docnexus.ai.table_engine.planning import compile_task_understanding
 from docnexus.ai.table_engine.skills.adapters import validate_structuring_skill_output
 from docnexus.ai.table_engine.skills.executor import execute_skill
 from docnexus.ai.table_engine.skills.renderer import render_skill_prompt
@@ -207,8 +210,7 @@ def _finalize_candidates_by_task(candidates: list, task_spec):
                 limit = None
 
     filtered_candidates = [candidate for candidate in candidates if _candidate_satisfies_task(candidate, task_spec)]
-    if filtered_candidates:
-        candidates = filtered_candidates
+    candidates = filtered_candidates
 
     has_daily_identity = any(_candidate_has_entity_and_date(candidate) for candidate in candidates)
     if not sort_field and not limit and not has_daily_identity:
@@ -395,12 +397,14 @@ def _execute_skill_if_enabled(
         return None
 
     response_preview = json.dumps(result, ensure_ascii=False, default=str)[:800]
+    metrics = getattr(registry.llm_client, "last_metrics", None)
     state.add_llm_run(
         agent=agent_name,
         skill=skill_name,
         status="success",
         model=model,
         response_preview=response_preview,
+        metrics=metrics if isinstance(metrics, dict) else None,
     )
     state.add_skill_result(agent=agent_name, skill=skill_name, result=result, model=model)
     state.add_message(
@@ -576,6 +580,8 @@ class MasterAgent:
         if not state.source_docs:
             raise ValueError("No source documents found.")
 
+        template_preview = self.registry.template_analyzer.analyze(state.template_doc)
+
         skill_result = _run_skill(
             self.registry,
             state,
@@ -584,18 +590,27 @@ class MasterAgent:
             mode="planning",
             inputs={
                 "user_request_doc": state.user_request_doc.to_dict(),
-                "template_spec": None,
+                "template_spec": template_preview.to_dict(),
                 "source_doc_summaries": _source_doc_summaries(state),
             },
         )
 
-        state.route_plan = ["table_agent", "router_agent", "retrieval_agent", "rag_agent", "coder_agent", "verifier_agent"]
+        state.route_plan = [
+            "table_agent",
+            "router_agent",
+            "retrieval_agent",
+            "rag_agent",
+            "coder_agent",
+            "verifier_agent",
+            "repair_agent",
+        ]
         payload = {
             "document_count": len(state.documents),
             "source_document_count": len(state.source_docs),
             "route_plan": list(state.route_plan),
         }
         if skill_result:
+            state.task_understanding_result = dict(skill_result)
             payload["llm_intent"] = skill_result.get("intent")
             payload["llm_constraint_count"] = _skill_constraint_count(skill_result)
             payload["llm_task_hints"] = skill_result.get("task_hints", [])
@@ -622,6 +637,7 @@ class TableAgent:
             template_spec=template_spec,
             source_docs=state.source_docs,
         )
+        compile_task_understanding(task_spec, state.task_understanding_result)
         _ensure_temporal_schema_for_daily_sources(template_spec, task_spec, state.source_docs)
 
         state.template_spec = template_spec
@@ -640,6 +656,7 @@ class TableAgent:
                 "target_field_count": len(task_spec.target_fields),
                 "constraint_count": len(task_spec.constraints),
                 "task_policy": task_spec.task_policy,
+                "task_plan_operation_count": len(task_spec.task_plan.operations) if task_spec.task_plan else 0,
                 "writer": state.selected_writer,
             },
         )
@@ -928,6 +945,23 @@ class CoderAgent:
             merged_candidates = finalized_candidates
 
         records = candidates_to_structured_records(merged_candidates)
+        source_datasets = None
+        target_fields = None
+        if state.task_spec:
+            target_fields = list(state.task_spec.target_fields)
+        if state.evidence_pack and state.template_spec and len(state.template_spec.target_tables) == 1:
+            source_datasets = build_source_datasets(
+                state.evidence_pack,
+                state.source_docs,
+                target_table_id=state.template_spec.target_tables[0].target_table_id,
+            )
+        execution_result = TaskPlanExecutor().execute(
+            records,
+            state.task_spec.task_plan if state.task_spec else None,
+            source_datasets=source_datasets,
+            target_fields=target_fields,
+        )
+        records = execution_result.records
         records = self.registry.get_compute_engine("python").compute(records=records, task_spec=state.task_spec)
 
         state.rule_candidates = rule_candidates
@@ -935,7 +969,20 @@ class CoderAgent:
         state.merged_candidates = merged_candidates
         state.rejected_candidates = merge_result.rejected_candidates
         state.candidate_merge_warnings = merge_result.warnings
+        state.task_plan_applied_operations = execution_result.applied_operations
+        state.task_plan_skipped_operations = execution_result.skipped_operations
+        state.task_plan_execution_warnings = execution_result.warnings
         state.records = records
+        if execution_result.warnings:
+            state.add_log(
+                "coder_agent",
+                "task_plan_execution_warnings",
+                {
+                    "warnings": execution_result.warnings[:20],
+                    "applied_operations": execution_result.applied_operations,
+                    "skipped_operations": execution_result.skipped_operations,
+                },
+            )
 
         if merge_result.warnings:
             state.add_log(
@@ -995,7 +1042,15 @@ class VerifierAgent:
                 "template_spec": state.template_spec.to_dict() if state.template_spec else {},
                 "selected_records": {
                     "count": len(state.records),
-                    "sample_record_ids": [record.record_id for record in state.records[:10]],
+                    "records": [
+                        {
+                            "record_id": record.record_id,
+                            "values": record.values,
+                            "field_sources": record.field_sources,
+                            "confidence": record.confidence,
+                        }
+                        for record in state.records[:50]
+                    ],
                 },
                 "fill_result": {
                     "output_path": fill_result.output_path,
@@ -1005,11 +1060,14 @@ class VerifierAgent:
         )
 
         if skill_result:
-            raw_status = str(skill_result.get("status", "warning")).lower()
-            normalized_status = raw_status if raw_status in {"pass", "warning", "fail"} else "warning"
-            issues = skill_result.get("issues", [])
+            raw_status = str(skill_result.get("status") or skill_result.get("verdict") or "warning").lower()
+            status_aliases = {"warn": "warning", "warning": "warning", "pass": "pass", "fail": "fail"}
+            normalized_status = status_aliases.get(raw_status, "warning")
+            issues = skill_result.get("issues") or skill_result.get("risks") or []
             issue_count = len(issues) if isinstance(issues, list) else 0
             summary = str(skill_result.get("reasoning_summary", "")).strip()
+            if not summary and isinstance(issues, list) and issues:
+                summary = "; ".join(str(issue) for issue in issues[:5])
             message = summary or f"LLM verification reported {issue_count} issue(s)."
             verification_report.checks.append(
                 VerificationCheck(
@@ -1034,3 +1092,69 @@ class VerifierAgent:
             },
         )
         return state
+
+
+class RepairAgent:
+    """Perform one feedback-driven plan repair after a failed verification."""
+
+    MAX_ATTEMPTS = 1
+
+    def __init__(self, registry, coder_agent: CoderAgent, verifier_agent: VerifierAgent) -> None:
+        self.registry = registry
+        self.coder_agent = coder_agent
+        self.verifier_agent = verifier_agent
+
+    def run(self, state: AgentState) -> AgentState:
+        report = state.verification_report
+        if (
+            report is None
+            or report.status != "fail"
+            or state.task_spec is None
+            or state.retry_count >= self.MAX_ATTEMPTS
+        ):
+            return state
+
+        failed_checks = [check.to_dict() for check in report.checks if check.status == "fail"]
+        skill_result = _run_skill(
+            self.registry,
+            state,
+            agent_name="repair_agent",
+            skill_name="any2table-plan-repair",
+            mode="plan_repair",
+            inputs={
+                "user_request_doc": state.user_request_doc.to_dict() if state.user_request_doc else {},
+                "template_spec": state.template_spec.to_dict() if state.template_spec else {},
+                "source_doc_summaries": _source_doc_summaries(state),
+                "current_task_spec": state.task_spec.to_dict(),
+                "failed_checks": failed_checks,
+                "execution_warnings": list(state.task_plan_execution_warnings),
+            },
+        )
+        if not skill_result:
+            state.add_log("repair_agent", "repair_skipped", {"reason": "no repair plan returned"})
+            return state
+
+        repaired_task = deepcopy(state.task_spec)
+        repaired_task.constraints = [
+            constraint for constraint in repaired_task.constraints if constraint.source != "llm_task_plan"
+        ]
+        repaired_plan = compile_task_understanding(repaired_task, skill_result)
+        if repaired_plan.validation_errors:
+            state.add_log(
+                "repair_agent",
+                "repair_rejected",
+                {"validation_errors": repaired_plan.validation_errors},
+            )
+            return state
+
+        state.task_spec = repaired_task
+        state.task_understanding_result = dict(skill_result)
+        state.retry_count += 1
+        state.add_message(
+            "repair_agent",
+            "plan_repair",
+            "Repair agent accepted a revised task plan and started one bounded retry.",
+            {"attempt": state.retry_count, "failed_check_count": len(failed_checks)},
+        )
+        state = self.coder_agent.run(state)
+        return self.verifier_agent.run(state)
