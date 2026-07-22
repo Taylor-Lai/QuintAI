@@ -43,14 +43,21 @@ def _operation_parameter_errors(operation: TaskOperation) -> list[str]:
         return [f"{prefix}: {operation.op} requires non-empty conditions."]
     if operation.op == "sort" and not (params.get("field") or params.get("by") or _has_sequence(params, "keys")):
         return [f"{prefix}: sort requires field, by, or keys."]
-    if operation.op == "limit" and not (params.get("n") or params.get("limit")):
-        return [f"{prefix}: limit requires a positive n or limit."]
+    if operation.op == "limit":
+        try:
+            limit = int(str(params.get("n") or params.get("limit") or 0))
+        except (TypeError, ValueError):
+            limit = 0
+        if limit <= 0:
+            return [f"{prefix}: limit requires a positive n or limit."]
     if operation.op == "group_by" and not (params.get("fields") or params.get("by") or params.get("group_by")):
         return [f"{prefix}: group_by requires fields."]
     if operation.op == "aggregate" and not _has_sequence(params, "metrics", "aggregations"):
         return [f"{prefix}: aggregate requires metrics or aggregations."]
     if operation.op == "impute" and not params.get("field"):
         return [f"{prefix}: impute requires field."]
+    if operation.op == "normalize_unit" and not (params.get("field") and params.get("target_unit")):
+        return [f"{prefix}: normalize_unit requires field and target_unit."]
     if operation.op == "join":
         if len(operation.inputs) < 2:
             return [f"{prefix}: join requires two input datasets."]
@@ -73,6 +80,26 @@ def _operation_parameter_errors(operation: TaskOperation) -> list[str]:
             return [f"{prefix}: derive requires two input fields."]
     if operation.op == "project" and not _has_sequence(params, "fields"):
         return [f"{prefix}: project requires fields."]
+    if operation.op == "deduplicate" and not _has_sequence(params, "fields", "keys"):
+        return [f"{prefix}: deduplicate requires fields or keys."]
+    if operation.op == "rank" and not (params.get("field") or params.get("by")):
+        return [f"{prefix}: rank requires field or by."]
+    if operation.op == "pivot":
+        if not (params.get("columns") and (params.get("values") or params.get("value_field"))):
+            return [f"{prefix}: pivot requires columns and values."]
+    if operation.op == "unpivot":
+        if not _has_sequence(params, "value_fields", "fields"):
+            return [f"{prefix}: unpivot requires value_fields or fields."]
+    if operation.op == "window":
+        if not (params.get("field") and params.get("output_field") and params.get("function")):
+            return [f"{prefix}: window requires field, output_field, and function."]
+        if str(params.get("function") or "").lower() not in {
+            "cumulative_sum",
+            "cumsum",
+            "moving_average",
+            "rolling_average",
+        }:
+            return [f"{prefix}: window function is unsupported."]
     return []
 
 

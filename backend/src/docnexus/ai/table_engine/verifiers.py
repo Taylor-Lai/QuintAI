@@ -14,6 +14,7 @@ from docnexus.ai.table_engine.core.models import (
     VerificationCheck,
     VerificationReport,
 )
+from docnexus.ai.table_engine.quality import build_data_quality_checks
 
 
 def _status_from_counts(*, fail_count: int = 0, warning_count: int = 0) -> str:
@@ -347,6 +348,7 @@ class DefaultVerifier:
                 ),
             ),
         ]
+        checks.extend(build_data_quality_checks(task_spec, template_spec, evidence_pack, records))
         warning_count = sum(1 for check in checks if check.status == "warning")
         fail_count = sum(1 for check in checks if check.status == "fail")
         status = _status_from_counts(fail_count=fail_count, warning_count=warning_count)

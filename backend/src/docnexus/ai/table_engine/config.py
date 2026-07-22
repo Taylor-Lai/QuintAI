@@ -34,6 +34,11 @@ class AppConfig:
     llm_api_key_env: str = "OPENAI_API_KEY"
     llm_timeout_seconds: float = 90.0
     llm_max_retries: int = 2
+    llm_concurrency: int = 3
+    llm_cache_size: int = 128
+    llm_max_calls_per_run: int = 40
+    llm_max_total_tokens_per_run: int = 120000
+    repair_max_attempts: int = 1
     output_dir: str = "outputs"
     enable_intermediate_dump: bool = False
     intermediate_root: str = "workspace/cache"
@@ -49,3 +54,11 @@ class AppConfig:
             raise ValueError(
                 f"Invalid writer_backend '{self.writer_backend}'; must be one of: 'auto', 'xlsx', 'docx'."
             )
+        if self.llm_concurrency < 1:
+            raise ValueError("llm_concurrency must be at least 1.")
+        if self.llm_cache_size < 0:
+            raise ValueError("llm_cache_size cannot be negative.")
+        if self.llm_max_calls_per_run < 1 or self.llm_max_total_tokens_per_run < 1:
+            raise ValueError("LLM run budgets must be positive.")
+        if self.repair_max_attempts < 0:
+            raise ValueError("repair_max_attempts cannot be negative.")

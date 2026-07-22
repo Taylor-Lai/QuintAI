@@ -19,7 +19,7 @@ QuintAI 是一套文档智能处理系统，由 FastAPI 后端、Vue 3 前端和
 ## 技术栈
 
 - 后端：FastAPI、SQLAlchemy、Pydantic、LangChain、LangGraph；
-- 前端：Vue 3、Pinia、Vue Router、Axios、ECharts、Vite；
+- 前端：Vue 3、Pinia、Vue Router、Axios、ECharts、ExcelJS、Vite；
 - 文档处理：python-docx、openpyxl、pandas；
 - 部署：Docker、Docker Compose。
 
@@ -47,7 +47,7 @@ QuintAI 是一套文档智能处理系统，由 FastAPI 后端、Vue 3 前端和
 
 ```powershell
 conda activate wangtiao-engineering
-python -m pip install -r requirements/dev.txt
+python -m pip install -r requirements/runtime.txt -r requirements/dev.txt
 python -m pip install --no-deps -e backend
 Copy-Item .env.example .env
 ```
@@ -74,11 +74,14 @@ npm run dev
 ## 质量检查
 
 ```powershell
-pytest -m "not api_acceptance"
-ruff check backend
+pytest -m "not api_acceptance" --cov=docnexus.ai.table_engine.execution --cov=docnexus.ai.table_engine.planning --cov=docnexus.ai.table_engine.quality --cov-fail-under=75
+ruff check backend scripts
+mypy
+python scripts/evaluate_table_engine.py
 Set-Location frontend
 npm run lint
 npm run build
+npm audit --omit=dev
 ```
 
 需要真实模型凭据的测试位于 `backend/tests/acceptance`，并带有

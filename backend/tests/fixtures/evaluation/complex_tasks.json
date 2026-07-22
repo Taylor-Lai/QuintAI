@@ -1,0 +1,58 @@
+{
+  "version": "1.0",
+  "cases": [
+    {
+      "case_id": "join-and-profit",
+      "target_table_id": "profit",
+      "target_fields": ["商品", "销售额", "成本", "利润"],
+      "datasets": {
+        "orders": [{"values": {"商品": "A", "销售额": 120}}],
+        "costs": [{"values": {"商品": "A", "成本": 80}}]
+      },
+      "operations": [
+        {"operation_id": "join", "op": "join", "inputs": ["orders", "costs"], "output": "joined", "params": {"on": "商品"}},
+        {"operation_id": "derive", "op": "derive", "inputs": ["joined"], "params": {"output_field": "利润", "operator": "subtract", "fields": ["销售额", "成本"]}}
+      ],
+      "expected": [{"商品": "A", "销售额": 120, "成本": 80, "利润": 40}]
+    },
+    {
+      "case_id": "deduplicate-rank-top2",
+      "target_table_id": "sales",
+      "target_fields": ["城市", "销售额", "排名"],
+      "records": [
+        {"values": {"城市": "甲", "销售额": 100}},
+        {"values": {"城市": "甲", "销售额": 100}},
+        {"values": {"城市": "乙", "销售额": 200}},
+        {"values": {"城市": "丙", "销售额": 50}}
+      ],
+      "operations": [
+        {"operation_id": "dedupe", "op": "deduplicate", "params": {"fields": ["城市"]}},
+        {"operation_id": "sort", "op": "sort", "params": {"field": "销售额", "order": "desc"}},
+        {"operation_id": "rank", "op": "rank", "params": {"field": "销售额", "output_field": "排名"}},
+        {"operation_id": "limit", "op": "limit", "params": {"n": 2}}
+      ],
+      "expected": [
+        {"城市": "乙", "销售额": 200, "排名": 1},
+        {"城市": "甲", "销售额": 100, "排名": 2}
+      ]
+    },
+    {
+      "case_id": "cumulative-window",
+      "target_table_id": "trend",
+      "target_fields": ["日期", "新增", "累计"],
+      "records": [
+        {"values": {"日期": "2026-01-01", "新增": 2}},
+        {"values": {"日期": "2026-01-02", "新增": 3}},
+        {"values": {"日期": "2026-01-03", "新增": 5}}
+      ],
+      "operations": [
+        {"operation_id": "window", "op": "window", "params": {"field": "新增", "output_field": "累计", "function": "cumulative_sum", "order_by": "日期"}}
+      ],
+      "expected": [
+        {"日期": "2026-01-01", "新增": 2, "累计": 2},
+        {"日期": "2026-01-02", "新增": 3, "累计": 5},
+        {"日期": "2026-01-03", "新增": 5, "累计": 10}
+      ]
+    }
+  ]
+}

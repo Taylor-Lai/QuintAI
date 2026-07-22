@@ -16,3 +16,15 @@ select = ["E4", "E7", "E9", "F", "I"]
 
 [tool.ruff.lint.per-file-ignores]
 "backend/tests/*.py" = ["E402"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+check_untyped_defs = true
+warn_unused_ignores = true
+files = [
+  "backend/src/docnexus/ai/table_engine/execution",
+  "backend/src/docnexus/ai/table_engine/planning",
+  "backend/src/docnexus/ai/table_engine/quality.py",
+  "backend/src/docnexus/ai/table_engine/evaluation.py",
+]

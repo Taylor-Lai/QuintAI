@@ -680,7 +680,7 @@
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import * as XLSX from 'xlsx'
+import { createExcelBlob, XLSX_MIME_TYPE } from '../utils/excel'
 import {
   uploadDocChatApi,
   uploadDocExtractApi,
@@ -1135,25 +1135,11 @@ const buildExcelFileFromActiveTemplate = async () => {
     throw new Error('当前模板没有可用字段，无法生成 Excel 模板文件')
   }
 
-  const worksheet = XLSX.utils.aoa_to_sheet([headers])
-  const workbook = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(workbook, worksheet, '模板')
-
-  const arrayBuffer = XLSX.write(workbook, {
-    bookType: 'xlsx',
-    type: 'array'
-  })
-
-  const blob = new Blob(
-    [arrayBuffer],
-    {
-      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-    }
-  )
+  const blob = await createExcelBlob(headers)
 
   const safeName = (template.name || '模板').replace(/[\\/:*?"<>|]/g, '_')
   return new File([blob], `${safeName}.xlsx`, {
-    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    type: XLSX_MIME_TYPE
   })
 }
 

@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import logging
 import os
+from collections import OrderedDict
+from hashlib import sha256
 from pathlib import Path
+from threading import Lock
 from time import perf_counter
 
 from docnexus.ai.table_engine.config import AppConfig
@@ -74,6 +77,9 @@ class OpenAiLlmClient:
         self.model = config.llm_model
         self.base_url = _normalize_base_url(config.llm_base_url)
         self.last_metrics: dict[str, object] = {}
+        self._cache_size = config.llm_cache_size
+        self._cache: OrderedDict[str, LlmResponse] = OrderedDict()
+        self._cache_lock = Lock()
         api_key = os.getenv(config.llm_api_key_env)
         self.is_available = OpenAI is not None and bool(api_key)
         self._client = (
@@ -98,6 +104,16 @@ class OpenAiLlmClient:
         if not self.is_available or self._client is None:
             raise RuntimeError("OpenAI-compatible LLM client is not available. Check dependency and API key.")
 
+        cache_key = sha256(f"{self.provider}\0{self.model}\0{system_prompt}\0{user_prompt}".encode()).hexdigest()
+        if self._cache_size:
+            with self._cache_lock:
+                cached = self._cache.get(cache_key)
+                if cached is not None:
+                    self._cache.move_to_end(cache_key)
+                    metrics = {**cached.metrics, "cache_hit": True, "duration_ms": 0.0}
+                    self.last_metrics = metrics
+                    return LlmResponse(cached.content, cached.model, cached.provider, dict(cached.raw), metrics)
+
         started_at = perf_counter()
         response = self._client.chat.completions.create(
             model=self.model,
@@ -109,22 +125,32 @@ class OpenAiLlmClient:
         )
         raw_content = response.choices[0].message.content
         usage = getattr(response, "usage", None)
-        self.last_metrics = {
+        metrics = {
             "duration_ms": round((perf_counter() - started_at) * 1000, 2),
             "input_tokens": getattr(usage, "prompt_tokens", None),
             "output_tokens": getattr(usage, "completion_tokens", None),
             "total_tokens": getattr(usage, "total_tokens", None),
             "response_model": getattr(response, "model", None),
+            "cache_hit": False,
         }
+        self.last_metrics = metrics
         if raw_content is None:
             logger.warning("LLM returned None content; defaulting to empty JSON object")
         content = raw_content or "{}"
-        return LlmResponse(
+        result = LlmResponse(
             content=content,
             model=self.model,
             provider=self.provider,
             raw=response.model_dump() if hasattr(response, "model_dump") else {},
+            metrics=metrics,
         )
+        if self._cache_size:
+            with self._cache_lock:
+                self._cache[cache_key] = result
+                self._cache.move_to_end(cache_key)
+                while len(self._cache) > self._cache_size:
+                    self._cache.popitem(last=False)
+        return result
 
 
 def build_llm_client(config: AppConfig) -> OpenAiLlmClient | None:

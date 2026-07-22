@@ -9,9 +9,16 @@ from pathlib import Path
 from typing import Callable
 
 from docnexus.ai.llm import (
+    LLM_CACHE_SIZE,
+    LLM_CONCURRENCY,
+    LLM_MAX_CALLS_PER_RUN,
+    LLM_MAX_RETRIES,
+    LLM_MAX_TOTAL_TOKENS_PER_RUN,
     LLM_PROVIDER,
+    LLM_TIMEOUT_SECONDS,
     OPENAI_BASE_URL,
     OPENAI_MODEL,
+    TABLE_REPAIR_MAX_ATTEMPTS,
     ZHIPU_BASE_URL,
     ZHIPU_MODEL,
 )
@@ -43,8 +50,9 @@ def _write_fill_run_report(work_dir: Path, task_id: str, result) -> Path:
         warnings.append(result.verification_report.summary)
 
     payload = {
-        "schema_version": "1.0",
+        "schema_version": "1.1",
         "task_id": task_id,
+        "trace_id": debug.get("trace_id"),
         "created_at": datetime.now().isoformat(timespec="seconds"),
         "workspace_dir": str(work_dir),
         "input_summary": {
@@ -85,6 +93,7 @@ def _write_fill_run_report(work_dir: Path, task_id: str, result) -> Path:
             {key: value for key, value in run.items() if key not in {"response_preview", "error"}}
             for run in debug.get("llm_runs", [])
         ],
+        "observability": debug.get("observability", {}),
         "written_cell_count": len(result.fill_result.written_cells),
         "non_empty_written_cell_count": sum(
             1 for cell in result.fill_result.written_cells if cell.value not in (None, "", "未找到")
@@ -138,6 +147,13 @@ def handle_table_filling(
             llm_model=llm_model,
             llm_api_key_env=llm_api_key_env,
             llm_base_url=llm_base_url or None,
+            llm_timeout_seconds=LLM_TIMEOUT_SECONDS,
+            llm_max_retries=LLM_MAX_RETRIES,
+            llm_concurrency=LLM_CONCURRENCY,
+            llm_cache_size=LLM_CACHE_SIZE,
+            llm_max_calls_per_run=LLM_MAX_CALLS_PER_RUN,
+            llm_max_total_tokens_per_run=LLM_MAX_TOTAL_TOKENS_PER_RUN,
+            repair_max_attempts=TABLE_REPAIR_MAX_ATTEMPTS,
             rag_backend="hybrid",
         )
 

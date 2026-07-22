@@ -144,6 +144,7 @@ class TemplateSpec(DictSerializable):
 class TaskOperation(DictSerializable):
     operation_id: str
     op: str
+    target_table_id: str | None = None
     inputs: list[str] = field(default_factory=list)
     output: str | None = None
     params: dict[str, object] = field(default_factory=dict)

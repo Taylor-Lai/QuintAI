@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from time import perf_counter
 from typing import TypedDict
+from uuid import uuid4
 
 from docnexus.ai.table_engine.candidates import CandidateRecord
 from docnexus.ai.table_engine.core.models import (
@@ -52,6 +54,7 @@ class AgentState:
     task_plan_applied_operations: list[str] = field(default_factory=list)
     task_plan_skipped_operations: list[str] = field(default_factory=list)
     task_plan_execution_warnings: list[str] = field(default_factory=list)
+    task_plan_operation_metrics: list[dict[str, object]] = field(default_factory=list)
     records: list[StructuredRecord] = field(default_factory=list)
     fill_result: FillResult | None = None
     verification_report: VerificationReport | None = None
@@ -65,6 +68,8 @@ class AgentState:
     retrieval_units: dict[str, list[dict[str, object]]] = field(default_factory=dict)
     retry_count: int = 0
     runtime_backend: str | None = None
+    trace_id: str = field(default_factory=lambda: uuid4().hex)
+    stage_metrics: list[dict[str, object]] = field(default_factory=list)
 
     def add_message(self, agent: str, kind: str, content: str, payload: dict[str, object] | None = None) -> None:
         message = {"agent": agent, "kind": kind, "content": content}
@@ -170,9 +175,13 @@ class GraphRuntime:
     def run(self, state: AgentState) -> AgentState:
         state.runtime_backend = self.backend_name
         for node_name, node in self.nodes:
+            started_at = perf_counter()
             state.add_log(node_name, "start")
             state = node.run(state)
             state.add_log(node_name, "finish")
+            state.stage_metrics.append(
+                {"stage": node_name, "duration_ms": round((perf_counter() - started_at) * 1000, 2)}
+            )
         return state
 
 
@@ -199,9 +208,13 @@ class LangGraphRuntime:
     def _wrap_node(self, node_name: str, node: object):
         def runner(payload: GraphStatePayload) -> GraphStatePayload:
             state = payload["state"]
+            started_at = perf_counter()
             state.add_log(node_name, "start")
             state = node.run(state)
             state.add_log(node_name, "finish")
+            state.stage_metrics.append(
+                {"stage": node_name, "duration_ms": round((perf_counter() - started_at) * 1000, 2)}
+            )
             return {"state": state}
 
         return runner

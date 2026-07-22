@@ -215,7 +215,7 @@
 <script setup>
 import { computed, ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import * as XLSX from 'xlsx'
+import { downloadExcel } from '../utils/excel'
 import AppHeader from '../components/AppHeader.vue'
 
 const router = useRouter()
@@ -353,7 +353,7 @@ const downloadTemplateAsJson = () => {
   triggerDownload(blob, fileName)
 }
 
-const downloadTemplateAsExcel = () => {
+const downloadTemplateAsExcel = async () => {
   const payload = buildUploadPayload()
   const headers = payload.fields.map(field => field.label || field.key || '未命名字段')
 
@@ -362,11 +362,7 @@ const downloadTemplateAsExcel = () => {
     return
   }
 
-  const worksheet = XLSX.utils.aoa_to_sheet([headers])
-  const workbook = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(workbook, worksheet, '模板')
-
-  XLSX.writeFile(workbook, `${payload.name || '未命名模板'}.xlsx`)
+  await downloadExcel(headers, `${payload.name || '未命名模板'}.xlsx`)
 }
 
 const uploadTemplateToLibrary = async () => {

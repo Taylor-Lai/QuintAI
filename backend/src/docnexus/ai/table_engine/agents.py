@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 
 from docnexus.ai.table_engine.candidates.builders import (
@@ -15,7 +16,7 @@ from docnexus.ai.table_engine.candidates.builders import (
 )
 from docnexus.ai.table_engine.core.models import Constraint, FieldSpec, VerificationCheck
 from docnexus.ai.table_engine.core.runtime import AgentState
-from docnexus.ai.table_engine.execution import TaskPlanExecutor, build_source_datasets
+from docnexus.ai.table_engine.execution import TaskPlanExecutor, build_source_datasets, plan_for_target_table
 from docnexus.ai.table_engine.indexing.build_units import build_retrieval_units
 from docnexus.ai.table_engine.merging import merge_candidates
 from docnexus.ai.table_engine.planning import compile_task_understanding
@@ -380,8 +381,21 @@ def _execute_skill_if_enabled(
         )
         return None
 
+    completed_calls = sum(1 for run in state.llm_runs if run.get("status") in {"success", "error"})
+    total_tokens = sum(
+        int((run.get("metrics") or {}).get("total_tokens") or 0)
+        for run in state.llm_runs
+        if isinstance(run.get("metrics"), dict)
+    )
+    if completed_calls >= registry.config.llm_max_calls_per_run:
+        state.add_log(agent_name, "skill_execution_skipped", {"skill": skill_name, "reason": "call_budget_exhausted"})
+        return None
+    if total_tokens >= registry.config.llm_max_total_tokens_per_run:
+        state.add_log(agent_name, "skill_execution_skipped", {"skill": skill_name, "reason": "token_budget_exhausted"})
+        return None
+
     try:
-        result, model = execute_skill(registry, skill_name=skill_name, inputs=inputs)
+        result, model, metrics = execute_skill(registry, skill_name=skill_name, inputs=inputs)
     except Exception as exc:  # pragma: no cover - network/provider dependent
         state.add_llm_run(
             agent=agent_name,
@@ -397,7 +411,6 @@ def _execute_skill_if_enabled(
         return None
 
     response_preview = json.dumps(result, ensure_ascii=False, default=str)[:800]
-    metrics = getattr(registry.llm_client, "last_metrics", None)
     state.add_llm_run(
         agent=agent_name,
         skill=skill_name,
@@ -439,15 +452,36 @@ def _skill_constraint_count(skill_result: dict[str, object]) -> int:
     return 0
 
 
-def _paragraph_blocks_for_skill(source_doc) -> list[dict[str, object]]:
-    blocks: list[dict[str, object]] = []
-    total_chars = 0
-    for block in source_doc.blocks:
+def _context_terms(state: AgentState) -> list[str]:
+    terms = list(state.task_spec.target_fields) if state.task_spec else []
+    if state.task_spec:
+        for constraint in state.task_spec.constraints:
+            if constraint.field:
+                terms.append(constraint.field)
+            if constraint.kind in {"entity", "date_range", "exact_datetime", "request_text"}:
+                terms.append(str(constraint.value))
+    normalized = [str(term).strip().lower() for term in terms if str(term).strip()]
+    return list(dict.fromkeys(normalized))
+
+
+def _paragraph_blocks_for_skill(source_doc, terms: list[str]) -> list[dict[str, object]]:
+    ranked_blocks: list[tuple[int, int, object]] = []
+    for index, block in enumerate(source_doc.blocks):
         text = (block.text or "").strip()
         if not text:
             continue
-        if len(blocks) >= MAX_PARAGRAPH_COUNT:
-            break
+        lowered = text.lower()
+        score = sum(1 for term in terms if term and term in lowered)
+        ranked_blocks.append((score, index, block))
+    if any(score for score, _, _ in ranked_blocks):
+        ranked_blocks.sort(key=lambda item: (item[0], -item[1]), reverse=True)
+        ranked_blocks = ranked_blocks[:MAX_PARAGRAPH_COUNT]
+        ranked_blocks.sort(key=lambda item: item[1])
+
+    blocks: list[dict[str, object]] = []
+    total_chars = 0
+    for _, _, block in ranked_blocks:
+        text = (block.text or "").strip()
         if blocks and total_chars + len(text) > MAX_PARAGRAPH_CHARS:
             break
         blocks.append(
@@ -460,10 +494,12 @@ def _paragraph_blocks_for_skill(source_doc) -> list[dict[str, object]]:
     return blocks
 
 
-def _table_blocks_for_skill(source_doc) -> list[dict[str, object]]:
+def _table_blocks_for_skill(source_doc, terms: list[str]) -> list[dict[str, object]]:
     """将 xlsx/表格型文档的每一行转成文本块供 LLM Skill 处理。"""
     blocks: list[dict[str, object]] = []
     total_chars = 0
+    candidates: list[tuple[int, int, str, str]] = []
+    sequence = 0
     for table in source_doc.tables:
         headers = [h.name for h in table.headers]
         for row in table.rows:
@@ -473,14 +509,19 @@ def _table_blocks_for_skill(source_doc) -> list[dict[str, object]]:
             text = " | ".join(f"{h}: {v}" for h, v in zip(headers, cells) if v)
             if not text:
                 continue
-            if len(blocks) >= MAX_PARAGRAPH_COUNT:
-                break
-            if blocks and total_chars + len(text) > MAX_PARAGRAPH_CHARS:
-                break
-            blocks.append({"block_id": row.row_id, "text": text})
-            total_chars += len(text)
-        if len(blocks) >= MAX_PARAGRAPH_COUNT:
+            lowered = text.lower()
+            score = sum(1 for term in terms if term and term in lowered)
+            candidates.append((score, sequence, row.row_id, text))
+            sequence += 1
+    if any(score for score, _, _, _ in candidates):
+        candidates.sort(key=lambda item: (item[0], -item[1]), reverse=True)
+        candidates = candidates[:MAX_PARAGRAPH_COUNT]
+        candidates.sort(key=lambda item: item[1])
+    for _, _, row_id, text in candidates[:MAX_PARAGRAPH_COUNT]:
+        if blocks and total_chars + len(text) > MAX_PARAGRAPH_CHARS:
             break
+        blocks.append({"block_id": row_id, "text": text})
+        total_chars += len(text)
     return blocks
 
 
@@ -490,26 +531,39 @@ def _build_table_skill_inputs(state: AgentState, source_doc) -> dict[str, object
         for target_table in state.template_spec.target_tables:
             template_fields.extend(field.field_name for field in target_table.schema)
 
-    tables_payload = []
-    total_rows = 0
-    for table in source_doc.tables:
+    terms = _context_terms(state)
+    table_definitions = []
+    ranked_rows: list[tuple[int, int, int, dict[str, object]]] = []
+    sequence = 0
+    for table_index, table in enumerate(source_doc.tables):
         headers = [h.name for h in table.headers]
         if not headers:
             continue
-        rows_payload = []
+        table_definitions.append((table_index, table, headers))
         for row in table.rows:
-            if total_rows >= MAX_TABLE_ROWS:
-                break
-            rows_payload.append({h: c.value for h, c in zip(headers, row.cells)})
-            total_rows += 1
-        tables_payload.append({
+            values = {header: cell.value for header, cell in zip(headers, row.cells)}
+            row_text = " | ".join(f"{key}: {value}" for key, value in values.items() if value not in (None, ""))
+            score = sum(1 for term in terms if term and term in row_text.lower())
+            ranked_rows.append((score, sequence, table_index, values))
+            sequence += 1
+    source_row_count = len(ranked_rows)
+    if any(score for score, _, _, _ in ranked_rows):
+        ranked_rows.sort(key=lambda item: (item[0], -item[1]), reverse=True)
+    selected_rows = ranked_rows[:MAX_TABLE_ROWS]
+    selected_rows.sort(key=lambda item: item[1])
+    rows_by_table: dict[int, list[dict[str, object]]] = {}
+    for _, _, table_index, values in selected_rows:
+        rows_by_table.setdefault(table_index, []).append(values)
+    tables_payload = [
+        {
             "table_id": table.table_id,
             "name": table.name or "",
             "headers": headers,
-            "rows": rows_payload,
-        })
-        if total_rows >= MAX_TABLE_ROWS:
-            break
+            "rows": rows_by_table.get(table_index, []),
+        }
+        for table_index, table, headers in table_definitions
+        if rows_by_table.get(table_index)
+    ]
 
     return {
         "user_request_doc": state.user_request_doc.to_dict() if state.user_request_doc else {},
@@ -521,7 +575,9 @@ def _build_table_skill_inputs(state: AgentState, source_doc) -> dict[str, object
             "doc_type": source_doc.doc_type,
             "metadata": source_doc.metadata,
             "table_count": len(tables_payload),
-            "truncated": total_rows >= MAX_TABLE_ROWS,
+            "source_row_count": source_row_count,
+            "selected_row_count": len(selected_rows),
+            "truncated": source_row_count > len(selected_rows),
         },
         "tables": tables_payload,
     }
@@ -533,9 +589,9 @@ def _build_paragraph_skill_inputs(state: AgentState, source_doc) -> dict[str, ob
         for target_table in state.template_spec.target_tables:
             template_fields.extend(field.field_name for field in target_table.schema)
     if source_doc.blocks:
-        paragraphs = _paragraph_blocks_for_skill(source_doc)
+        paragraphs = _paragraph_blocks_for_skill(source_doc, _context_terms(state))
     else:
-        paragraphs = _table_blocks_for_skill(source_doc)
+        paragraphs = _table_blocks_for_skill(source_doc, _context_terms(state))
     return {
         "user_request_doc": state.user_request_doc.to_dict() if state.user_request_doc else {},
         "task_spec": state.task_spec.to_dict() if state.task_spec else {},
@@ -551,16 +607,25 @@ def _build_paragraph_skill_inputs(state: AgentState, source_doc) -> dict[str, ob
     }
 
 
-def _legacy_rule_candidates(state: AgentState, records) -> list:
-    target_fields = list(state.task_spec.target_fields) if state.task_spec else []
+def _registered_extractor_candidates(registry, state: AgentState) -> list:
+    """Adapt an explicitly configured custom extractor into the candidate pipeline."""
+    if state.task_spec is None or state.template_spec is None or state.evidence_pack is None:
+        return []
+    extractor = registry.get_extractor(registry.config.extractor_backend)
+    records = extractor.extract(
+        task_spec=state.task_spec,
+        template_spec=state.template_spec,
+        evidence_pack=state.evidence_pack,
+    )
+    target_fields = list(state.task_spec.target_fields)
     entity_level = infer_target_entity_level(target_fields)
     return [
         structured_record_to_candidate(
             record,
             target_fields=target_fields,
-            source_strategy="legacy_rule",
+            source_strategy="registered_extractor",
             entity_level=entity_level,
-            metadata={"builder": "legacy_extractor"},
+            metadata={"builder": "registered_extractor"},
         )
         for record in records
     ]
@@ -854,74 +919,124 @@ class CoderAgent:
     def __init__(self, registry) -> None:
         self.registry = registry
 
-    def run(self, state: AgentState) -> AgentState:
-        extractor = self.registry.get_extractor(self.registry.config.extractor_backend)
-        rule_candidates = build_rule_candidates(state.task_spec, state.template_spec, state.evidence_pack)
-        legacy_records = []
-        if not rule_candidates:
-            legacy_records = extractor.extract(
-                task_spec=state.task_spec,
-                template_spec=state.template_spec,
-                evidence_pack=state.evidence_pack,
-            )
-            rule_candidates = _legacy_rule_candidates(state, legacy_records)
-
-        agent_candidates = []
-        for source_doc in state.source_docs:
-            if not source_doc.blocks and not source_doc.tables:
-                continue
-
-            if source_doc.blocks:
-                skill_name = "any2table-paragraph-structuring"
-                skill_inputs = _build_paragraph_skill_inputs(state, source_doc)
-                content_key = "paragraphs"
-                mode = "paragraph_extraction"
-            else:
-                skill_name = "any2table-table-row-extraction"
-                skill_inputs = _build_table_skill_inputs(state, source_doc)
-                content_key = "tables"
-                mode = "table_extraction"
-
-            if not skill_inputs.get(content_key):
-                continue
-
-            skill_result = _run_skill(
-                self.registry,
-                state,
-                agent_name="coder_agent",
-                skill_name=skill_name,
-                mode=mode,
-                inputs=skill_inputs,
-            )
-            if not skill_result:
-                continue
-
-            valid, error_msg = validate_structuring_skill_output(skill_result)
-            if not valid:
-                state.add_log("coder_agent", "skill_output_invalid", {
-                    "source_doc_id": source_doc.doc_id,
-                    "skill": skill_name,
-                    "error": error_msg,
-                })
-                continue
-
-            doc_candidates = build_agent_candidates_from_skill_result(
-                task_spec=state.task_spec,
-                template_spec=state.template_spec,
-                source_doc=source_doc,
-                skill_result=skill_result,
-            )
-            agent_candidates.extend(doc_candidates)
+    def _extract_source_candidates(self, state: AgentState, source_doc) -> list:
+        if not source_doc.blocks and not source_doc.tables:
+            return []
+        if source_doc.blocks:
+            skill_name = "any2table-paragraph-structuring"
+            skill_inputs = _build_paragraph_skill_inputs(state, source_doc)
+            content_key = "paragraphs"
+            mode = "paragraph_extraction"
+        else:
+            skill_name = "any2table-table-row-extraction"
+            skill_inputs = _build_table_skill_inputs(state, source_doc)
+            content_key = "tables"
+            mode = "table_extraction"
+        if not skill_inputs.get(content_key):
+            return []
+        skill_result = _run_skill(
+            self.registry,
+            state,
+            agent_name="coder_agent",
+            skill_name=skill_name,
+            mode=mode,
+            inputs=skill_inputs,
+        )
+        if not skill_result:
+            return []
+        valid, error_msg = validate_structuring_skill_output(skill_result)
+        if not valid:
             state.add_log(
                 "coder_agent",
-                f"{mode}_completed",
-                {
-                    "source_doc_id": source_doc.doc_id,
-                    "skill": skill_name,
-                    "content_count": len(skill_inputs[content_key]),
-                    "candidate_count": len(doc_candidates),
-                },
+                "skill_output_invalid",
+                {"source_doc_id": source_doc.doc_id, "skill": skill_name, "error": error_msg},
             )
+            return []
+        doc_candidates = build_agent_candidates_from_skill_result(
+            task_spec=state.task_spec,
+            template_spec=state.template_spec,
+            source_doc=source_doc,
+            skill_result=skill_result,
+        )
+        state.add_log(
+            "coder_agent",
+            f"{mode}_completed",
+            {
+                "source_doc_id": source_doc.doc_id,
+                "skill": skill_name,
+                "content_count": len(skill_inputs[content_key]),
+                "candidate_count": len(doc_candidates),
+            },
+        )
+        return doc_candidates
+
+    def rerun_plan(self, state: AgentState) -> AgentState:
+        """Re-execute only the deterministic plan over already merged candidates."""
+        candidate_records = candidates_to_structured_records(state.merged_candidates)
+        records = []
+        execution_results = []
+        if state.template_spec and state.evidence_pack:
+            for target_table in state.template_spec.target_tables:
+                source_datasets = build_source_datasets(
+                    state.evidence_pack,
+                    state.source_docs,
+                    target_table_id=target_table.target_table_id,
+                )
+                table_plan = plan_for_target_table(
+                    state.task_spec.task_plan if state.task_spec else None,
+                    target_table.target_table_id,
+                )
+                result = TaskPlanExecutor().execute(
+                    [record for record in candidate_records if record.target_table_id == target_table.target_table_id],
+                    table_plan,
+                    source_datasets=source_datasets,
+                    target_fields=[field.field_name for field in target_table.schema],
+                )
+                execution_results.append((target_table.target_table_id, result))
+                records.extend(result.records)
+        state.records = self.registry.get_compute_engine("python").compute(records=records, task_spec=state.task_spec)
+        state.task_plan_applied_operations = [
+            f"{table_id}:{operation_id}"
+            for table_id, result in execution_results
+            for operation_id in result.applied_operations
+        ]
+        state.task_plan_skipped_operations = [
+            f"{table_id}:{operation_id}"
+            for table_id, result in execution_results
+            for operation_id in result.skipped_operations
+        ]
+        state.task_plan_execution_warnings = [
+            f"{table_id}: {warning}"
+            for table_id, result in execution_results
+            for warning in result.warnings
+        ]
+        state.task_plan_operation_metrics = [
+            {"target_table_id": table_id, **metric}
+            for table_id, result in execution_results
+            for metric in result.operation_metrics
+        ]
+        state.add_log(
+            "coder_agent",
+            "deterministic_plan_rerun",
+            {"record_count": len(state.records), "operation_count": len(state.task_plan_applied_operations)},
+        )
+        return state
+
+    def run(self, state: AgentState) -> AgentState:
+        rule_candidates = build_rule_candidates(state.task_spec, state.template_spec, state.evidence_pack)
+        if not rule_candidates and self.registry.config.extractor_backend != "default":
+            rule_candidates = _registered_extractor_candidates(self.registry, state)
+
+        agent_candidates = []
+        source_docs = [document for document in state.source_docs if document.blocks or document.tables]
+        concurrency = min(self.registry.config.llm_concurrency, len(source_docs))
+        if concurrency > 1 and self.registry.config.enable_llm_skill_execution:
+            with ThreadPoolExecutor(max_workers=concurrency, thread_name_prefix="table-extract") as pool:
+                for doc_candidates in pool.map(lambda document: self._extract_source_candidates(state, document), source_docs):
+                    agent_candidates.extend(doc_candidates)
+        else:
+            for source_doc in source_docs:
+                agent_candidates.extend(self._extract_source_candidates(state, source_doc))
 
         target_entity_level = infer_target_entity_level(list(state.task_spec.target_fields) if state.task_spec else [])
         merge_result = merge_candidates(
@@ -930,8 +1045,6 @@ class CoderAgent:
             target_entity_level=target_entity_level,
         )
         merged_candidates = merge_result.merged_candidates
-        if not merged_candidates and legacy_records:
-            merged_candidates = _legacy_rule_candidates(state, legacy_records)
         finalized_candidates = _finalize_candidates_by_task(merged_candidates, state.task_spec)
         if len(finalized_candidates) != len(merged_candidates) or finalized_candidates != merged_candidates:
             state.add_log(
@@ -944,24 +1057,39 @@ class CoderAgent:
             )
             merged_candidates = finalized_candidates
 
-        records = candidates_to_structured_records(merged_candidates)
-        source_datasets = None
-        target_fields = None
-        if state.task_spec:
-            target_fields = list(state.task_spec.target_fields)
-        if state.evidence_pack and state.template_spec and len(state.template_spec.target_tables) == 1:
-            source_datasets = build_source_datasets(
-                state.evidence_pack,
-                state.source_docs,
-                target_table_id=state.template_spec.target_tables[0].target_table_id,
+        candidate_records = candidates_to_structured_records(merged_candidates)
+        execution_results = []
+        records = []
+        if state.template_spec and state.evidence_pack:
+            for target_table in state.template_spec.target_tables:
+                table_records = [
+                    record for record in candidate_records if record.target_table_id == target_table.target_table_id
+                ]
+                source_datasets = build_source_datasets(
+                    state.evidence_pack,
+                    state.source_docs,
+                    target_table_id=target_table.target_table_id,
+                )
+                table_plan = plan_for_target_table(
+                    state.task_spec.task_plan if state.task_spec else None,
+                    target_table.target_table_id,
+                )
+                execution_result = TaskPlanExecutor().execute(
+                    table_records,
+                    table_plan,
+                    source_datasets=source_datasets,
+                    target_fields=[field.field_name for field in target_table.schema],
+                )
+                execution_results.append((target_table.target_table_id, execution_result))
+                records.extend(execution_result.records)
+        else:
+            execution_result = TaskPlanExecutor().execute(
+                candidate_records,
+                state.task_spec.task_plan if state.task_spec else None,
+                target_fields=list(state.task_spec.target_fields) if state.task_spec else None,
             )
-        execution_result = TaskPlanExecutor().execute(
-            records,
-            state.task_spec.task_plan if state.task_spec else None,
-            source_datasets=source_datasets,
-            target_fields=target_fields,
-        )
-        records = execution_result.records
+            execution_results.append(("all", execution_result))
+            records = execution_result.records
         records = self.registry.get_compute_engine("python").compute(records=records, task_spec=state.task_spec)
 
         state.rule_candidates = rule_candidates
@@ -969,18 +1097,35 @@ class CoderAgent:
         state.merged_candidates = merged_candidates
         state.rejected_candidates = merge_result.rejected_candidates
         state.candidate_merge_warnings = merge_result.warnings
-        state.task_plan_applied_operations = execution_result.applied_operations
-        state.task_plan_skipped_operations = execution_result.skipped_operations
-        state.task_plan_execution_warnings = execution_result.warnings
+        state.task_plan_applied_operations = [
+            f"{table_id}:{operation_id}"
+            for table_id, result in execution_results
+            for operation_id in result.applied_operations
+        ]
+        state.task_plan_skipped_operations = [
+            f"{table_id}:{operation_id}"
+            for table_id, result in execution_results
+            for operation_id in result.skipped_operations
+        ]
+        state.task_plan_execution_warnings = [
+            f"{table_id}: {warning}"
+            for table_id, result in execution_results
+            for warning in result.warnings
+        ]
+        state.task_plan_operation_metrics = [
+            {"target_table_id": table_id, **metric}
+            for table_id, result in execution_results
+            for metric in result.operation_metrics
+        ]
         state.records = records
-        if execution_result.warnings:
+        if state.task_plan_execution_warnings:
             state.add_log(
                 "coder_agent",
                 "task_plan_execution_warnings",
                 {
-                    "warnings": execution_result.warnings[:20],
-                    "applied_operations": execution_result.applied_operations,
-                    "skipped_operations": execution_result.skipped_operations,
+                    "warnings": state.task_plan_execution_warnings[:20],
+                    "applied_operations": state.task_plan_applied_operations,
+                    "skipped_operations": state.task_plan_skipped_operations,
                 },
             )
 
@@ -1028,6 +1173,34 @@ class VerifierAgent:
             records=state.records,
             fill_result=fill_result,
         )
+        join_expansion_warnings = [
+            warning
+            for warning in state.task_plan_execution_warnings
+            if "expanded" in warning.lower() or "cardinality validation failed" in warning.lower()
+        ]
+        join_cardinality_warnings = [
+            warning for warning in state.task_plan_execution_warnings if "many-to-many" in warning.lower()
+        ]
+        verification_report.checks.append(
+            VerificationCheck(
+                name="join_cardinality",
+                status="fail" if join_expansion_warnings else ("warning" if join_cardinality_warnings else "pass"),
+                message=(
+                    f"Detected {len(join_expansion_warnings)} excessive join expansion(s)."
+                    if join_expansion_warnings
+                    else (
+                        f"Detected {len(join_cardinality_warnings)} potentially many-to-many join(s)."
+                        if join_cardinality_warnings
+                        else "Join cardinality is within configured limits."
+                    )
+                ),
+                related_ids=[*join_expansion_warnings, *join_cardinality_warnings][:20],
+            )
+        )
+        if join_expansion_warnings:
+            verification_report.status = "fail"
+        elif join_cardinality_warnings and verification_report.status == "pass":
+            verification_report.status = "warning"
         state.fill_result = fill_result
         state.verification_report = verification_report
 
@@ -1097,8 +1270,6 @@ class VerifierAgent:
 class RepairAgent:
     """Perform one feedback-driven plan repair after a failed verification."""
 
-    MAX_ATTEMPTS = 1
-
     def __init__(self, registry, coder_agent: CoderAgent, verifier_agent: VerifierAgent) -> None:
         self.registry = registry
         self.coder_agent = coder_agent
@@ -1106,11 +1277,12 @@ class RepairAgent:
 
     def run(self, state: AgentState) -> AgentState:
         report = state.verification_report
+        max_attempts = getattr(getattr(self.registry, "config", None), "repair_max_attempts", 1)
         if (
             report is None
             or report.status != "fail"
             or state.task_spec is None
-            or state.retry_count >= self.MAX_ATTEMPTS
+            or state.retry_count >= max_attempts
         ):
             return state
 
@@ -1156,5 +1328,8 @@ class RepairAgent:
             "Repair agent accepted a revised task plan and started one bounded retry.",
             {"attempt": state.retry_count, "failed_check_count": len(failed_checks)},
         )
-        state = self.coder_agent.run(state)
+        if state.merged_candidates:
+            state = self.coder_agent.rerun_plan(state)
+        else:
+            state = self.coder_agent.run(state)
         return self.verifier_agent.run(state)

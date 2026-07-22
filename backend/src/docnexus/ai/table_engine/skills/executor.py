@@ -11,7 +11,9 @@ SKILL_SYSTEM_PROMPT = (
 )
 
 
-def execute_skill(registry, *, skill_name: str, inputs: dict[str, object]) -> tuple[dict[str, object], str]:
+def execute_skill(
+    registry, *, skill_name: str, inputs: dict[str, object]
+) -> tuple[dict[str, object], str, dict[str, object]]:
     skill = registry.skill_registry.get(skill_name)
     prompt = render_skill_prompt(skill, inputs)
     if registry.llm_client is None:
@@ -19,4 +21,4 @@ def execute_skill(registry, *, skill_name: str, inputs: dict[str, object]) -> tu
     response = registry.llm_client.invoke_json(system_prompt=SKILL_SYSTEM_PROMPT, user_prompt=prompt)
     if response.content is None:
         raise RuntimeError(f"LLM returned empty content for skill '{skill_name}'. Model: {response.model}")
-    return parse_skill_json(response.content), response.model
+    return parse_skill_json(response.content), response.model, dict(response.metrics)

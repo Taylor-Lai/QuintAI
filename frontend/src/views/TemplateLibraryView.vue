@@ -374,7 +374,7 @@
 <script setup>
 import { computed, ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import * as XLSX from 'xlsx'
+import { downloadExcel } from '../utils/excel'
 import AppHeader from '../components/AppHeader.vue'
 
 const router = useRouter()
@@ -933,13 +933,10 @@ const goEditor = () => {
   router.push({ name: 'editor' })
 }
 
-const downloadTemplateExcel = (item) => {
+const downloadTemplateExcel = async (item) => {
   if (!item) return
   const headers = item.fieldList || []
-  const worksheet = XLSX.utils.aoa_to_sheet([headers])
-  const workbook = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(workbook, worksheet, '模板')
-  XLSX.writeFile(workbook, `${item.name || '模板'}.xlsx`)
+  await downloadExcel(headers, `${item.name || '模板'}.xlsx`)
 }
 
 const increaseLikes = (item) => {

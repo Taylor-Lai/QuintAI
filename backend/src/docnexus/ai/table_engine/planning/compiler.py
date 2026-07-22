@@ -6,16 +6,22 @@ from docnexus.ai.table_engine.core.models import Constraint, TaskOperation, Task
 from docnexus.ai.table_engine.planning.validator import validate_task_plan
 
 ALLOWED_OPERATIONS = {
+    "deduplicate",
     "filter",
     "exclude",
     "group_by",
     "aggregate",
     "sort",
     "limit",
+    "normalize_unit",
     "impute",
     "join",
     "derive",
     "project",
+    "pivot",
+    "rank",
+    "unpivot",
+    "window",
 }
 COMPARISON_OPERATORS = {">", ">=", "<", "<=", "=", "==", "eq", "gt", "gte", "lt", "lte"}
 
@@ -39,7 +45,8 @@ def _operation_from_dict(raw: dict[str, object], index: int, target_fields: list
     op = str(raw.get("op") or "").strip().lower()
     if op not in ALLOWED_OPERATIONS:
         return None
-    params = dict(raw.get("params") or {}) if isinstance(raw.get("params"), dict) else {}
+    raw_params = raw.get("params")
+    params: dict[str, object] = dict(raw_params) if isinstance(raw_params, dict) else {}
     if "group_fields" in params and "group_by" not in params:
         params["group_by"] = params["group_fields"]
     for key in ("field", "by", "group_by"):
@@ -73,13 +80,16 @@ def _operation_from_dict(raw: dict[str, object], index: int, target_fields: list
             params["metrics"] = normalized_metrics
         else:
             params["aggregations"] = normalized_metrics
+    raw_inputs = raw.get("inputs")
+    raw_dependencies = raw.get("depends_on")
     return TaskOperation(
         operation_id=str(raw.get("operation_id") or raw.get("id") or f"op-{index}"),
         op=op,
-        inputs=[str(value) for value in raw.get("inputs", [])] if isinstance(raw.get("inputs"), list) else [],
+        target_table_id=str(raw["target_table_id"]) if raw.get("target_table_id") else None,
+        inputs=[str(value) for value in raw_inputs] if isinstance(raw_inputs, list) else [],
         output=str(raw["output"]) if raw.get("output") else None,
         params=params,
-        depends_on=[str(value) for value in raw.get("depends_on", [])] if isinstance(raw.get("depends_on"), list) else [],
+        depends_on=[str(value) for value in raw_dependencies] if isinstance(raw_dependencies, list) else [],
     )
 
 
@@ -159,7 +169,7 @@ def compile_task_understanding(task_spec: TaskSpec, result: dict[str, object] | 
     if not operations:
         operations = legacy_operations
 
-    aggregate_metrics = []
+    aggregate_metrics: list[dict[str, object]] = []
     for operation in operations:
         if operation.op == "aggregate":
             raw_metrics = operation.params.get("metrics") or operation.params.get("aggregations") or []
@@ -190,6 +200,18 @@ def compile_task_understanding(task_spec: TaskSpec, result: dict[str, object] | 
         source="llm",
     )
     validation = validate_task_plan(plan)
+    if len(task_spec.target_tables) > 1:
+        target_table_ids = set(task_spec.target_tables)
+        for operation in plan.operations:
+            if not operation.target_table_id:
+                validation.errors.append(
+                    f"{operation.operation_id}: target_table_id is required for a multi-table task."
+                )
+            elif operation.target_table_id not in target_table_ids:
+                validation.errors.append(
+                    f"{operation.operation_id}: unknown target_table_id '{operation.target_table_id}'."
+                )
+        validation.valid = not validation.errors
     plan.validation_errors = validation.errors
     plan.validation_warnings = validation.warnings
     plan.unresolved.extend(error for error in validation.errors if error not in plan.unresolved)

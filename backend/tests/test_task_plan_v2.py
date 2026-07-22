@@ -23,7 +23,7 @@ from docnexus.ai.table_engine.core.models import (
     VerificationReport,
 )
 from docnexus.ai.table_engine.core.runtime import AgentState
-from docnexus.ai.table_engine.execution import TaskPlanExecutor, build_source_datasets
+from docnexus.ai.table_engine.execution import TaskPlanExecutor, build_source_datasets, plan_for_target_table
 from docnexus.ai.table_engine.planners import DefaultTaskPlanner
 from docnexus.ai.table_engine.planning import compile_task_understanding, validate_task_plan
 from docnexus.ai.table_engine.verifiers import DefaultVerifier, _task_constraint_violations
@@ -243,6 +243,158 @@ def test_source_datasets_can_be_joined_and_derived() -> None:
     assert [record.values for record in result.records] == [{"商品": "A", "销售额": 120, "成本": 80, "利润": 40}]
     assert result.applied_operations == ["join", "profit"]
     assert result.records[0].field_sources["利润"] == ["order-1", "cost-1"]
+
+
+def test_source_dataset_aliases_do_not_silently_overwrite_duplicates() -> None:
+    documents = [
+        CanonicalDocument(
+            doc_id="left",
+            file=FileAsset("left", "/tmp/a/shared.xlsx", "shared.xlsx", "xlsx", "source", None, 1),
+            doc_type="xlsx",
+        ),
+        CanonicalDocument(
+            doc_id="right",
+            file=FileAsset("right", "/tmp/b/shared.xlsx", "shared.xlsx", "xlsx", "source", None, 1),
+            doc_type="xlsx",
+        ),
+    ]
+    evidence = EvidencePack(
+        "task",
+        [
+            EvidenceItem("e1", "row", "left", {"id": 1}),
+            EvidenceItem("e2", "row", "right", {"id": 2}),
+        ],
+    )
+
+    datasets = build_source_datasets(evidence, documents, target_table_id="target")
+
+    assert "shared" not in datasets
+    assert "shared.xlsx" not in datasets
+    assert datasets["left"][0].values == {"id": 1}
+    assert datasets["right"][0].values == {"id": 2}
+
+
+def test_multi_table_plan_requires_scope_and_selects_operations() -> None:
+    task = TaskSpec(
+        "task",
+        "fill_table",
+        "template",
+        target_tables=["summary", "detail"],
+        target_fields=["地区", "销售额"],
+    )
+    plan = compile_task_understanding(
+        task,
+        {
+            "operations": [
+                {
+                    "operation_id": "summary-limit",
+                    "op": "limit",
+                    "target_table_id": "summary",
+                    "params": {"n": 1},
+                },
+                {"operation_id": "ambiguous", "op": "limit", "params": {"n": 2}},
+            ]
+        },
+    )
+
+    assert any("target_table_id is required" in error for error in plan.validation_errors)
+    scoped = plan_for_target_table(plan, "summary")
+    assert [operation.operation_id for operation in scoped.operations] == ["summary-limit", "ambiguous"]
+
+
+def test_executor_supports_pivot_unpivot_and_window() -> None:
+    records = [
+        StructuredRecord("r1", "trend", {"城市": "甲", "月份": "一月", "销售额": 10}),
+        StructuredRecord("r2", "trend", {"城市": "甲", "月份": "二月", "销售额": 20}),
+    ]
+    pivot_plan = TaskPlan(
+        operations=[
+            TaskOperation(
+                "pivot",
+                "pivot",
+                params={"index": ["城市"], "columns": "月份", "values": "销售额"},
+            ),
+            TaskOperation(
+                "unpivot",
+                "unpivot",
+                params={
+                    "id_fields": ["城市"],
+                    "value_fields": ["一月", "二月"],
+                    "variable_field": "月份",
+                    "value_field": "销售额",
+                },
+            ),
+            TaskOperation(
+                "window",
+                "window",
+                params={"field": "销售额", "output_field": "累计销售额", "function": "cumulative_sum", "order_by": "月份"},
+            ),
+        ]
+    )
+
+    result = TaskPlanExecutor().execute(records, pivot_plan)
+
+    assert [record.values for record in result.records] == [
+        {"城市": "甲", "月份": "一月", "销售额": 10, "累计销售额": 10},
+        {"城市": "甲", "月份": "二月", "销售额": 20, "累计销售额": 30},
+    ]
+
+
+def test_executor_supports_full_join_multi_sort_and_growth_rate() -> None:
+    left = [StructuredRecord("l1", "sales", {"商品": "A", "旧值": 10})]
+    right = [
+        StructuredRecord("r1", "sales", {"商品": "A", "新值": 15}),
+        StructuredRecord("r2", "sales", {"商品": "B", "新值": 20}),
+    ]
+    plan = TaskPlan(
+        operations=[
+            TaskOperation(
+                "join",
+                "join",
+                inputs=["left", "right"],
+                output="joined",
+                params={"on": "商品", "how": "full"},
+            ),
+            TaskOperation(
+                "growth",
+                "derive",
+                inputs=["joined"],
+                params={"output_field": "增长率", "operator": "growth_rate", "fields": ["旧值", "新值"], "percentage": True},
+            ),
+            TaskOperation(
+                "sort",
+                "sort",
+                params={"keys": [{"field": "新值", "order": "desc"}, {"field": "商品", "order": "asc"}]},
+            ),
+        ]
+    )
+
+    result = TaskPlanExecutor().execute([], plan, source_datasets={"left": left, "right": right})
+
+    assert result.records[0].values["商品"] == "B"
+    assert result.records[1].values["增长率"] == 50
+    assert result.operation_metrics[-1]["output_count"] == 2
+
+
+def test_executor_normalizes_units_before_aggregation() -> None:
+    records = [
+        StructuredRecord("r1", "sales", {"地区": "甲", "销售额": "1亿元"}),
+        StructuredRecord("r2", "sales", {"地区": "甲", "销售额": "5000万元"}),
+    ]
+    plan = TaskPlan(
+        operations=[
+            TaskOperation("unit", "normalize_unit", params={"field": "销售额", "target_unit": "万元"}),
+            TaskOperation(
+                "sum",
+                "aggregate",
+                params={"group_by": ["地区"], "aggregations": [{"field": "销售额", "function": "sum", "alias": "销售额"}]},
+            ),
+        ]
+    )
+
+    result = TaskPlanExecutor().execute(records, plan)
+
+    assert result.records[0].values == {"地区": "甲", "销售额": 15000}
 
 
 def test_repair_agent_retries_once_with_a_valid_replacement_plan(monkeypatch) -> None:

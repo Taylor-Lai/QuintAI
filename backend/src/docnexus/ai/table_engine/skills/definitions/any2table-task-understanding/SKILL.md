@@ -28,13 +28,14 @@ outputs:
   - `field`：约束涉及的字段名（如有）
   - `operator`：操作符，如 `"="`、`"between"`、`"contains"`
   - `value`：约束值
-- `operations`（list）：按执行顺序排列的操作。只允许：`filter`、`exclude`、`group_by`、`aggregate`、`sort`、`limit`、`impute`、`join`、`derive`、`project`。
+- `operations`（list）：按执行顺序排列的操作。只允许：`filter`、`exclude`、`group_by`、`aggregate`、`sort`、`limit`、`impute`、`normalize_unit`、`join`、`derive`、`project`、`deduplicate`、`rank`、`pivot`、`unpivot`、`window`。
 - `unresolved`（list of string）：无法从请求、模板和数据源确定的歧义。不得猜测。
 
 每个 operation 必须包含：
 
 - `operation_id`：唯一标识
 - `op`：操作类型
+- `target_table_id`：操作所属目标表。模板有多个目标表时必须填写
 - `inputs`：输入数据集标识列表
 - `output`：输出数据集标识
 - `params`：操作参数
@@ -46,9 +47,11 @@ outputs:
 2. 缺失值填充必须位于依赖它的聚合之前。
 3. 聚合结果上的筛选必须设置 `params.stage="post_aggregate"`。
 4. 分组、聚合、排序、限制、排除、连接、派生字段都必须显式成为 operation。
-5. `join` 必须指定两个输入数据集；同名连接键使用 `params.on`，不同名连接键同时使用 `params.left_on` 和 `params.right_on`。数据集名称优先使用 `source_doc_summaries` 中的 `doc_id`。
+5. `join` 必须指定两个输入数据集；同名连接键使用 `params.on`，不同名连接键同时使用 `params.left_on` 和 `params.right_on`。数据集名称优先使用 `source_doc_summaries` 中的 `doc_id`。已知关联基数时使用 `params.validate` 指定 `one_to_one`、`one_to_many` 或 `many_to_one`。
 6. `derive` 必须使用 `params.output_field`、`params.operator` 和两个 `params.fields`。operator 只允许 `add`、`subtract`、`multiply`、`divide`、`growth_rate`。
 7. `aggregate` 的 `params.aggregations` 每一项必须包含 `field`、`function` 和 `alias`。
+8. 多目标表任务中，每个 operation 必须使用模板给出的 `target_table_id`，不同目标表的中间数据集不得混用。
+9. 单位不一致时先用 `normalize_unit`，参数包含 `field`、`target_unit`，需要保留原字段时另设 `output_field`。
 
 ## 输出格式
 

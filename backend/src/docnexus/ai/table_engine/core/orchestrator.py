@@ -52,28 +52,27 @@ class SequentialOrchestrator:
             source_docs=source_docs,
         )
 
-        extractor = self.registry.get_extractor(self.registry.config.extractor_backend)
         rule_candidates = build_rule_candidates(task_spec, template_spec, evidence_pack)
-        if rule_candidates:
-            merged_candidates = list(rule_candidates)
-        else:
-            legacy_records = extractor.extract(
+        if not rule_candidates and self.registry.config.extractor_backend != "default":
+            extractor = self.registry.get_extractor(self.registry.config.extractor_backend)
+            custom_records = extractor.extract(
                 task_spec=task_spec,
                 template_spec=template_spec,
                 evidence_pack=evidence_pack,
             )
             target_fields = list(task_spec.target_fields)
             entity_level = infer_target_entity_level(target_fields)
-            merged_candidates = [
+            rule_candidates = [
                 structured_record_to_candidate(
                     record,
                     target_fields=target_fields,
-                    source_strategy="legacy_rule",
+                    source_strategy="registered_extractor",
                     entity_level=entity_level,
-                    metadata={"builder": "legacy_extractor"},
+                    metadata={"builder": "registered_extractor"},
                 )
-                for record in legacy_records
+                for record in custom_records
             ]
+        merged_candidates = list(rule_candidates)
 
         records = candidates_to_structured_records(merged_candidates)
         records = self.registry.get_compute_engine("python").compute(records=records, task_spec=task_spec)
@@ -143,6 +142,7 @@ class MultiAgentOrchestrator:
             raise ValueError("Multi-agent runtime did not produce a complete fill result.")
 
         debug = {
+            "trace_id": state.trace_id,
             "runtime": state.runtime_backend or getattr(self.runtime, "backend_name", "unknown"),
             "document_count": len(state.documents),
             "source_document_count": len(state.source_docs),
@@ -183,6 +183,28 @@ class MultiAgentOrchestrator:
             "skill_runs": state.skill_runs,
             "skill_results": state.skill_results,
             "llm_runs": state.llm_runs,
+            "observability": {
+                "stage_metrics": list(state.stage_metrics),
+                "llm_call_count": len(state.llm_runs),
+                "llm_total_tokens": sum(
+                    int((run.get("metrics") or {}).get("total_tokens") or 0)
+                    for run in state.llm_runs
+                    if isinstance(run.get("metrics"), dict)
+                ),
+                "llm_duration_ms": round(
+                    sum(
+                        float((run.get("metrics") or {}).get("duration_ms") or 0)
+                        for run in state.llm_runs
+                        if isinstance(run.get("metrics"), dict)
+                    ),
+                    2,
+                ),
+                "cache_hit_count": sum(
+                    1
+                    for run in state.llm_runs
+                    if isinstance(run.get("metrics"), dict) and (run.get("metrics") or {}).get("cache_hit")
+                ),
+            },
             "llm_skill_execution_enabled": self.registry.config.enable_llm_skill_execution,
             "rule_candidate_count": len(state.rule_candidates),
             "agent_candidate_count": len(state.agent_candidates),
@@ -193,6 +215,7 @@ class MultiAgentOrchestrator:
                 "applied_operations": list(state.task_plan_applied_operations),
                 "skipped_operations": list(state.task_plan_skipped_operations),
                 "warnings": list(state.task_plan_execution_warnings),
+                "operation_metrics": list(state.task_plan_operation_metrics),
             },
         }
         if self.registry.config.enable_intermediate_dump and state.template_spec is not None and state.task_spec is not None:

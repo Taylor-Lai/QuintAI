@@ -9,7 +9,7 @@ export default defineConfig({
       output: {
         manualChunks: {
           vue: ['vue', 'vue-router', 'pinia'],
-          spreadsheet: ['xlsx'],
+          spreadsheet: ['exceljs'],
           charts: ['echarts/core', 'echarts/charts', 'echarts/components', 'echarts/renderers']
         }
       }

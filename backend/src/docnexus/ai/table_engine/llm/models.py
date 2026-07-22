@@ -11,3 +11,4 @@ class LlmResponse:
     model: str
     provider: str
     raw: dict[str, object] = field(default_factory=dict)
+    metrics: dict[str, object] = field(default_factory=dict)

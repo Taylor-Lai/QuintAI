@@ -32,15 +32,19 @@ def build_source_datasets(
         all_records.append(record)
 
     datasets: dict[str, list[StructuredRecord]] = {"source": all_records}
+    alias_owners: dict[str, list[str]] = {}
     for document in source_docs:
         records = by_doc.get(document.doc_id, [])
+        datasets[document.doc_id] = records
         aliases = {
-            document.doc_id,
             document.file.name,
             Path(document.file.name).stem,
             str(document.metadata.get("logical_name") or ""),
         }
         for alias in aliases:
             if alias:
-                datasets[alias] = records
+                alias_owners.setdefault(alias, []).append(document.doc_id)
+    for alias, owners in alias_owners.items():
+        if len(set(owners)) == 1:
+            datasets[alias] = by_doc.get(owners[0], [])
     return datasets

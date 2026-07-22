@@ -15,6 +15,13 @@ ZHIPU_MODEL = os.getenv("ZHIPU_MODEL", "glm-4-flash")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+LLM_TIMEOUT_SECONDS = float(os.getenv("LLM_TIMEOUT_SECONDS", "90"))
+LLM_MAX_RETRIES = int(os.getenv("LLM_MAX_RETRIES", "2"))
+LLM_CONCURRENCY = int(os.getenv("LLM_CONCURRENCY", "3"))
+LLM_CACHE_SIZE = int(os.getenv("LLM_CACHE_SIZE", "128"))
+LLM_MAX_CALLS_PER_RUN = int(os.getenv("LLM_MAX_CALLS_PER_RUN", "40"))
+LLM_MAX_TOTAL_TOKENS_PER_RUN = int(os.getenv("LLM_MAX_TOTAL_TOKENS_PER_RUN", "120000"))
+TABLE_REPAIR_MAX_ATTEMPTS = int(os.getenv("TABLE_REPAIR_MAX_ATTEMPTS", "1"))
 
 _llm_instance = None
 
