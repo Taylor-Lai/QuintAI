@@ -1,0 +1,87 @@
+"""Application assembly helpers."""
+
+from __future__ import annotations
+
+import logging
+
+from docnexus.ai.table_engine.agents import (
+    CoderAgent,
+    MasterAgent,
+    RAGAgent,
+    RetrievalAgent,
+    RouterAgent,
+    TableAgent,
+    VerifierAgent,
+)
+from docnexus.ai.table_engine.analyzers import DefaultTemplateAnalyzer
+from docnexus.ai.table_engine.compute import PythonComputeEngine
+from docnexus.ai.table_engine.config import AppConfig
+from docnexus.ai.table_engine.core.orchestrator import MultiAgentOrchestrator, SequentialOrchestrator
+from docnexus.ai.table_engine.core.runtime import GraphRuntime, LangGraphRuntime
+from docnexus.ai.table_engine.extractors import DefaultExtractor
+from docnexus.ai.table_engine.llm import build_llm_client
+from docnexus.ai.table_engine.parsers import DoclingSourceParser, DocxParser, TextParser, XlsxParser
+from docnexus.ai.table_engine.planners import DefaultTaskPlanner
+from docnexus.ai.table_engine.rag import DefaultRagBackend, HybridRagBackend
+from docnexus.ai.table_engine.registry import ComponentRegistry
+from docnexus.ai.table_engine.retrievers import RuleRetriever
+from docnexus.ai.table_engine.skills.registry import SkillRegistry
+from docnexus.ai.table_engine.verifiers import DefaultVerifier
+from docnexus.ai.table_engine.writers import DocxTableWriter, XlsxWriter
+
+logger = logging.getLogger(__name__)
+
+
+def build_registry(config: AppConfig | None = None) -> ComponentRegistry:
+    registry = ComponentRegistry()
+    registry.config = config or AppConfig()
+
+    docling_parser = DoclingSourceParser()
+    if not docling_parser._converter:
+        logger.warning(
+            "docling is not installed or failed to initialize; "
+            "source documents will be parsed with DocxParser/XlsxParser instead. "
+            "Install docling for enhanced table extraction: pip install docling"
+        )
+    registry.register_parser(docling_parser)
+    registry.register_parser(TextParser())
+    registry.register_parser(DocxParser())
+    registry.register_parser(XlsxParser())
+
+    registry.register_template_analyzer(DefaultTemplateAnalyzer())
+    registry.register_task_planner("default", DefaultTaskPlanner())
+    registry.register_retriever("rule", RuleRetriever())
+    registry.register_rag_backend("default", DefaultRagBackend())
+    registry.register_rag_backend("hybrid", HybridRagBackend())
+    registry.register_extractor("default", DefaultExtractor())
+    registry.register_compute_engine("python", PythonComputeEngine())
+    registry.register_writer("xlsx", XlsxWriter())
+    registry.register_writer("docx", DocxTableWriter())
+    registry.register_verifier("default", DefaultVerifier())
+    if registry.config.enable_skill_runtime:
+        registry.skill_registry = SkillRegistry.from_root(registry.config.skills_root)
+    if registry.config.enable_llm_skill_execution:
+        registry.llm_client = build_llm_client(registry.config)
+    return registry
+
+
+def build_agent_runtime(registry: ComponentRegistry) -> GraphRuntime | LangGraphRuntime:
+    nodes = [
+        ("master", MasterAgent(registry)),
+        ("table_agent", TableAgent(registry)),
+        ("router_agent", RouterAgent(registry)),
+        ("retrieval_agent", RetrievalAgent(registry)),
+        ("rag_agent", RAGAgent(registry)),
+        ("coder_agent", CoderAgent(registry)),
+        ("verifier_agent", VerifierAgent(registry)),
+    ]
+    if registry.config.agent_runtime_backend == "langgraph":
+        return LangGraphRuntime(nodes)
+    return GraphRuntime(nodes)
+
+
+def build_orchestrator(config: AppConfig | None = None):
+    registry = build_registry(config=config)
+    if registry.config.enable_agent_runtime:
+        return MultiAgentOrchestrator(registry, runtime=build_agent_runtime(registry))
+    return SequentialOrchestrator(registry)

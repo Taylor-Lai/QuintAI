@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "docnexus-backend"
+version = "1.0.0"
+description = "FastAPI application for DocNexus document automation."
+readme = "README.md"
+requires-python = ">=3.11"
+
+[project.scripts]
+any2table = "docnexus.ai.table_engine.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"docnexus.ai.table_engine.skills" = ["definitions/*/SKILL.md"]
