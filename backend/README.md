@@ -1,7 +1,7 @@
 # QuintAI 后端
 
 后端是名为 `docnexus-backend` 的单一可安装 Python 发行包，对外提供
-`docnexus` 包。它包含 HTTP 应用、持久化层、应用服务和内部 AI 能力。
+`docnexus` 包。它包含 HTTP 应用、持久化层、应用服务和 AI 处理能力。
 
 ```text
 src/docnexus/
@@ -22,7 +22,6 @@ python -m pip install --no-deps -e backend
 uvicorn docnexus.main:app --reload
 ```
 
-项目保留了可选的 `any2table` 命令行入口，用于直接执行表格处理流水线；其实现
-仍是 `docnexus.ai` 的内部模块，不作为独立包发布。
+可以使用 `any2table` 命令行入口直接执行表格处理流水线。
 
 许可证： [MIT License](../LICENSE)。

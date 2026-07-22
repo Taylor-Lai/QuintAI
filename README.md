@@ -3,6 +3,26 @@
 QuintAI 是一套文档智能处理系统，由 FastAPI 后端、Vue 3 前端和内置 AI
 工作流组成，支持文档编辑、信息提取以及多源数据表格填充。
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/Python-3.11%2B-blue.svg)](https://www.python.org/)
+[![Vue](https://img.shields.io/badge/Vue-3-42b883.svg)](https://vuejs.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-005571.svg)](https://fastapi.tiangolo.com/)
+
+## 核心能力
+
+- 根据自然语言要求编辑 Word 文档内容与格式；
+- 从非结构化文档中提取指定字段，并保留证据与历史记录；
+- 将多个 DOCX、XLSX、TXT 等来源的数据融合写入目标表格；
+- 提供用户认证、任务管理、历史记录和后台管理界面；
+- 支持规则、RAG、Agent Skill 与大语言模型协同处理。
+
+## 技术栈
+
+- 后端：FastAPI、SQLAlchemy、Pydantic、LangChain、LangGraph；
+- 前端：Vue 3、Pinia、Vue Router、Axios、ECharts、Vite；
+- 文档处理：python-docx、openpyxl、pandas；
+- 部署：Docker、Docker Compose。
+
 ## 项目结构
 
 ```text
@@ -12,7 +32,7 @@ QuintAI 是一套文档智能处理系统，由 FastAPI 后端、Vue 3 前端和
 |   `-- tests/               # 单元、契约和真实接口验收测试
 |-- frontend/                # Vue 3 + Vite 前端
 |-- deploy/docker/           # 生产容器构建文件
-|-- docs/                    # 架构、开发、运维和 ADR 文档
+|-- docs/                    # 架构、开发和部署文档
 |-- requirements/            # Python 运行与开发依赖
 |-- scripts/                 # 可重复执行的 PowerShell 脚本
 |-- tests/manual/            # 跨系统人工验收场景及测试资料
@@ -21,8 +41,7 @@ QuintAI 是一套文档智能处理系统，由 FastAPI 后端、Vue 3 前端和
 `-- pyproject.toml           # 仓库级测试和代码检查配置
 ```
 
-仓库包含 `backend` 和 `frontend` 两个部署边界。服务端 AI 代码位于
-`docnexus.ai`，作为后端内部能力随后端一起开发、测试和发布，不作为独立包发布。
+服务端 AI 能力位于 `docnexus.ai`，由后端统一提供接口和任务编排。
 
 ## 使用 Anaconda 配置本地环境
 
@@ -64,7 +83,7 @@ npm run build
 
 需要真实模型凭据的测试位于 `backend/tests/acceptance`，并带有
 `api_acceptance` 标记。人工端到端测试及其输入、模板和预期结果位于
-`tests/manual`，每个场景均附有中文说明。
+`tests/manual`，每个场景均附有操作说明。
 
 ## 容器部署
 
@@ -79,6 +98,4 @@ docker compose up --build
 
 ## 开源许可证
 
-除另有说明的第三方资料外，本项目源代码采用 [MIT License](LICENSE)。在保留
-版权和许可声明的前提下，可以自由使用、复制、修改、合并、发布、分发、再许可
-及销售本软件。第三方依赖与人工测试资料的权利边界见 [NOTICE](NOTICE)。
+本项目采用 [MIT License](LICENSE)。

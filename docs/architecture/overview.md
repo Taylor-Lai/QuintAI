@@ -6,13 +6,12 @@
 flowchart LR
     Web["frontend<br/>Vue 应用"] -->|HTTP| API["backend<br/>FastAPI 应用"]
     API --> DB[("配置的数据库")]
-    API --> AI["docnexus.ai<br/>内部 AI 能力"]
+    API --> AI["docnexus.ai<br/>AI 处理模块"]
     AI --> LLM["配置的模型供应商"]
 ```
 
-`frontend` 只依赖公开 HTTP 契约。`backend` 负责传输层、身份认证、数据持久化、
-应用编排和服务端 AI。AI 与后端共用发布周期且不独立发布，因此作为后端内部
-模块维护。
+`frontend` 通过 HTTP API 与服务端交互。`backend` 负责身份认证、数据持久化、
+任务编排、文档处理和 AI 调用。
 
 ## 后端分层
 
