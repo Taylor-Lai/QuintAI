@@ -26,6 +26,9 @@ sys.path.insert(0, str(ROOT / "backend" / "src"))
 
 load_dotenv(ROOT / ".env")
 os.environ.setdefault("SECRET_KEY", "acceptance-test-only-secret-key-32-characters")
+_ACCEPTANCE_RUNTIME = tempfile.TemporaryDirectory()
+os.environ["DATABASE_URL"] = f"sqlite:///{Path(_ACCEPTANCE_RUNTIME.name) / 'acceptance.db'}"
+os.environ["DATA_DIR"] = str(Path(_ACCEPTANCE_RUNTIME.name) / "data")
 
 try:
     import pytest
@@ -35,8 +38,9 @@ except ImportError:  # pragma: no cover - unittest remains supported
     pytestmark = None
 
 try:
-    from docnexus.db import init_db
+    from docnexus.db import Base, engine
     from docnexus.main import app
+    from docnexus.worker.celery_app import celery_app
     from docx import Document  # type: ignore
     from fastapi.testclient import TestClient  # type: ignore
     from openpyxl import Workbook, load_workbook  # type: ignore
@@ -47,7 +51,6 @@ except Exception as exc:  # pragma: no cover
     TestClient = None  # type: ignore
     Workbook = None  # type: ignore
     load_workbook = None  # type: ignore
-    init_db = None  # type: ignore
     app = None  # type: ignore
     _IMPORT_ERROR = exc
 
@@ -65,12 +68,22 @@ def _non_empty_rows(path: Path):
     return [row for row in ws.iter_rows(min_row=2, values_only=True) if any(value not in (None, "") for value in row)]
 
 
+def _resolve_task(client, response):
+    assert response.status_code == 202, response.text
+    task = client.get(f"/tasks/{response.json()['id']}")
+    assert task.status_code == 200, task.text
+    payload = task.json()
+    assert payload["status"] == "succeeded", payload
+    return client.get(f"/tasks/{payload['id']}/download") if payload["has_file"] else task
+
+
 @unittest.skipIf(_IMPORT_ERROR is not None, f"API stress dependencies unavailable: {_IMPORT_ERROR}")
 @unittest.skipUnless(_has_real_llm_config(), "Real LLM API key is not configured in .env/environment.")
 class RealLlmStressMatrixTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        init_db()
+        Base.metadata.create_all(engine)
+        celery_app.conf.update(task_always_eager=True, task_eager_propagates=True)
 
     def setUp(self) -> None:
         self.client = TestClient(app)
@@ -110,6 +123,7 @@ class RealLlmStressMatrixTests(unittest.TestCase):
                 files={"document": ("format_source.docx", file_obj, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")},
             )
 
+        response = _resolve_task(self.client, response)
         self.assertEqual(response.status_code, 200, response.text[:500])
         output = self.work / "formatted.docx"
         output.write_bytes(response.content)
@@ -144,8 +158,8 @@ class RealLlmStressMatrixTests(unittest.TestCase):
                 files={"file": ("extract_source.docx", file_obj, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")},
             )
 
-        self.assertEqual(response.status_code, 200, response.text[:500])
-        data = response.json()["extracted_data"]
+        response = _resolve_task(self.client, response)
+        data = response.json()["result"]["extracted_data"]
         for field in fields.split(","):
             self.assertIn(field, data)
             self.assertNotIn(data[field], (None, "", "\u672a\u627e\u5230"))
@@ -189,6 +203,7 @@ class RealLlmStressMatrixTests(unittest.TestCase):
                 ],
             )
 
+        response = _resolve_task(self.client, response)
         self.assertEqual(response.status_code, 200, response.text[:500])
         output = self.work / "gdp_filled.xlsx"
         output.write_bytes(response.content)
@@ -242,6 +257,7 @@ class RealLlmStressMatrixTests(unittest.TestCase):
                 ],
             )
 
+        response = _resolve_task(self.client, response)
         self.assertEqual(response.status_code, 200, response.text[:500])
         output = self.work / "aqi_filled.xlsx"
         output.write_bytes(response.content)
@@ -301,6 +317,7 @@ class RealLlmStressMatrixTests(unittest.TestCase):
                 ],
             )
 
+        response = _resolve_task(self.client, response)
         self.assertEqual(response.status_code, 200, response.text[:500])
         output = self.work / "covid_filled.xlsx"
         output.write_bytes(response.content)
@@ -370,6 +387,7 @@ class RealLlmStressMatrixTests(unittest.TestCase):
                 ],
             )
 
+        response = _resolve_task(self.client, response)
         self.assertEqual(response.status_code, 200, response.text[:500])
         output = self.work / "covid_merge_filled.xlsx"
         output.write_bytes(response.content)

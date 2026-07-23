@@ -1,5 +1,6 @@
 aiohappyeyeballs==2.6.1
 aiohttp==3.13.3
+alembic==1.16.5
 aiosignal==1.4.0
 aiosqlite==0.22.1
 annotated-doc==0.0.4
@@ -10,6 +11,7 @@ backoff==2.2.1
 bcrypt==4.0.1
 build==1.4.0
 cachetools==7.0.2
+celery==5.5.3
 certifi==2026.2.25
 cffi==2.0.0
 charset-normalizer==3.4.4
@@ -97,8 +99,11 @@ python-docx==1.2.0
 python-dotenv==1.2.2
 python-jose==3.5.0
 python-multipart==0.0.22
+psycopg[binary]==3.2.9
 PyYAML==6.0.3
 referencing==0.37.0
+redis==6.4.0
+setuptools==80.9.0
 requests==2.32.5
 requests-oauthlib==2.0.0
 requests-toolbelt==1.0.0
@@ -124,6 +129,7 @@ uvicorn==0.41.0
 watchfiles==1.1.1
 websocket-client==1.9.0
 websockets==16.0
+wheel==0.45.1
 win32_setctime==1.2.0
 xxhash==3.6.0
 yarl==1.23.0

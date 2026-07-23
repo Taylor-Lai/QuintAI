@@ -12,6 +12,7 @@ src/docnexus/
 |-- repositories/            # 持久化操作
 |-- schemas/                 # HTTP 数据契约
 |-- services/                # 应用层编排
+|-- worker/                  # Celery 异步任务执行
 `-- main.py                  # ASGI 应用工厂
 ```
 
@@ -19,6 +20,7 @@ src/docnexus/
 
 ```powershell
 python -m pip install --no-deps -e backend
+python -m alembic upgrade head
 uvicorn docnexus.main:app --reload
 ```
 

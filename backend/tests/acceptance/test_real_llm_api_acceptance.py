@@ -28,6 +28,9 @@ sys.path.insert(0, str(ROOT / "backend" / "src"))
 
 load_dotenv(ROOT / ".env")
 os.environ.setdefault("SECRET_KEY", "acceptance-test-only-secret-key-32-characters")
+_ACCEPTANCE_RUNTIME = tempfile.TemporaryDirectory()
+os.environ["DATABASE_URL"] = f"sqlite:///{Path(_ACCEPTANCE_RUNTIME.name) / 'acceptance.db'}"
+os.environ["DATA_DIR"] = str(Path(_ACCEPTANCE_RUNTIME.name) / "data")
 
 try:
     import pytest
@@ -37,8 +40,9 @@ except ImportError:  # pragma: no cover - unittest remains supported
     pytestmark = None
 
 try:
-    from docnexus.db import init_db
+    from docnexus.db import Base, engine
     from docnexus.main import app
+    from docnexus.worker.celery_app import celery_app
     from docx import Document  # type: ignore
     from fastapi.testclient import TestClient  # type: ignore
     from openpyxl import Workbook, load_workbook  # type: ignore
@@ -58,6 +62,15 @@ def _has_real_llm_config() -> bool:
     if provider == "zhipu":
         return bool(os.getenv("ZHIPU_API_KEY"))
     return bool(os.getenv("OPENAI_API_KEY"))
+
+
+def _resolve_task(client, response):
+    assert response.status_code == 202, response.text
+    task = client.get(f"/tasks/{response.json()['id']}")
+    assert task.status_code == 200, task.text
+    payload = task.json()
+    assert payload["status"] == "succeeded", payload
+    return client.get(f"/tasks/{payload['id']}/download") if payload["has_file"] else task
 
 
 def _write_doc_extract_source(path: Path) -> None:
@@ -113,7 +126,8 @@ def _write_source_txt(path: Path) -> None:
 class RealLlmApiAcceptanceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        init_db()
+        Base.metadata.create_all(engine)
+        celery_app.conf.update(task_always_eager=True, task_eager_propagates=True)
 
     def setUp(self) -> None:
         self.client = TestClient(app)
@@ -144,10 +158,8 @@ class RealLlmApiAcceptanceTests(unittest.TestCase):
                 files={"file": ("project.docx", file_obj, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")},
             )
 
-        self.assertEqual(response.status_code, 200, response.text)
-        payload = response.json()
-        self.assertEqual(payload["status"], "success")
-        data = payload["extracted_data"]
+        response = _resolve_task(self.client, response)
+        data = response.json()["result"]["extracted_data"]
         for field in ("项目名称", "负责人", "预算", "截止日期"):
             self.assertIn(field, data)
             self.assertNotIn(data[field], (None, "", "未找到"))
@@ -177,6 +189,7 @@ class RealLlmApiAcceptanceTests(unittest.TestCase):
                 ],
             )
 
+        response = _resolve_task(self.client, response)
         self.assertEqual(response.status_code, 200, response.text[:500])
         after_reports = set(report_dir.glob("*-fill-run-report.json")) if report_dir.exists() else set()
         new_reports = after_reports - before_reports

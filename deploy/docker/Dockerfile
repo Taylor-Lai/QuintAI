@@ -13,7 +13,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     APP_ENV=production \
     STATIC_DIR=/app/static \
-    DATABASE_URL=sqlite:////app/data/doc_system.db
+    DATA_DIR=/app/data
 
 WORKDIR /app
 
@@ -21,11 +21,18 @@ COPY requirements/runtime.txt ./requirements/runtime.txt
 RUN pip install --no-cache-dir -r requirements/runtime.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
 
 COPY backend/ ./backend/
-RUN pip install --no-cache-dir --no-deps ./backend
+RUN pip install --no-cache-dir --no-deps --no-build-isolation ./backend
+
+COPY alembic.ini ./alembic.ini
+COPY backend/alembic/ ./backend/alembic/
 
 COPY --from=web-builder /build/web/dist ./static/
-RUN mkdir -p /app/data /app/reports
+RUN addgroup --system app && adduser --system --ingroup app app \
+    && mkdir -p /app/data \
+    && chown -R app:app /app
+
+USER app
 
 EXPOSE 8000
 
-CMD ["uvicorn", "docnexus.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["sh", "-c", "alembic upgrade head && uvicorn docnexus.main:app --host 0.0.0.0 --port 8000"]

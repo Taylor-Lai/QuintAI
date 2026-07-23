@@ -15,7 +15,7 @@ class TableFiller:
     def fill_template(
         template_bytes: bytes,
         extracted_data: Dict,
-        field_mapping: Dict[str, str] = None,
+        field_mapping: Dict[str, str] | None = None,
     ) -> BytesIO:
         """
         根据提取的数据填充 Excel 模板
@@ -161,7 +161,7 @@ class TableFiller:
 
     @staticmethod
     def create_template_from_fields(
-        fields: List[str], output_path: str = None
+        fields: List[str], output_path: str | None = None
     ) -> BytesIO:
         """
         根据字段列表自动生成 Excel 模板
@@ -174,7 +174,7 @@ class TableFiller:
             ws = wb.active
             ws.title = "数据填写表"
 
-            # ✅ 修复：逐个字段写入不同列
+            # 逐个字段写入不同列。
             logger.debug("Creating template with fields: %s", fields)
 
             for col_idx, field in enumerate(fields, 1):  # 从第 1 列开始

@@ -41,7 +41,7 @@ async def register(user_data: UserCreate, db: Session = Depends(get_db)):
         id=str(uuid.uuid4())[:8],
         username=user_data.username,
         email=user_data.email,
-        hashed_password=AuthService.get_password_hash(user_data.password),
+        password_hash=AuthService.get_password_hash(user_data.password),
     )
 
     db.add(user)
@@ -54,15 +54,15 @@ async def register(user_data: UserCreate, db: Session = Depends(get_db)):
 @router.post("/auth/login", response_model=Token)
 async def login(
     login_data: LoginRequest,
+    request: Request,
     db: Session = Depends(get_db),
-    request: Request = None
 ):
     """用户登录"""
     # 根据邮箱查找用户
     user = db.query(User).filter(User.email == login_data.email).first()
 
     if not user or not AuthService.verify_password(
-        login_data.password, user.hashed_password
+        login_data.password, user.password_hash
     ):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -70,22 +70,22 @@ async def login(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    if user.accountStatus != "正常":
+    if user.account_status != "正常":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="账号已被禁用")
 
     # 更新登录信息
     from datetime import datetime
-    user.last_login_time = datetime.now()
-    user.last_activity_time = datetime.now()  # 初始化最后活动时间
-    if request:
+    user.last_login_at = datetime.now()
+    user.last_activity_at = datetime.now()
+    if request.client:
         user.last_login_ip = request.client.host
-    user.login_status = "在线"
     db.commit()
     db.refresh(user)
 
     # 创建 Token (使用用户ID作为sub，过期时间为3小时)
     access_token = AuthService.create_access_token(
-        data={"sub": user.id}, expires_delta=timedelta(hours=3)
+        data={"sub": user.id, "ver": int(user.token_version or 0)},
+        expires_delta=timedelta(minutes=settings.access_token_expire_minutes),
     )
 
     return {
@@ -96,7 +96,7 @@ async def login(
             "username": user.username,
             "email": user.email,
             "role": user.role,
-            "accountStatus": user.accountStatus,
+            "account_status": user.account_status,
         },
     }
 
@@ -108,7 +108,7 @@ async def logout(
 ):
     """用户登出"""
     # 更新登录状态为离线
-    current_user.login_status = "离线"
+    current_user.token_version = int(current_user.token_version or 0) + 1
     db.commit()
     db.refresh(current_user)
 
@@ -129,10 +129,7 @@ async def heartbeat(
     前端需要定期调用（建议每5分钟一次）
     """
     # 更新最后活动时间（不更新 last_login_time）
-    current_user.last_activity_time = datetime.now()
-    # 确保状态为在线
-    if current_user.login_status != "在线":
-        current_user.login_status = "在线"
+    current_user.last_activity_at = datetime.now()
     db.commit()
     db.refresh(current_user)
 
@@ -141,7 +138,7 @@ async def heartbeat(
         "message": "心跳成功",
         "data": {
             "user_id": current_user.id,
-            "login_status": current_user.login_status
+            "last_activity_at": current_user.last_activity_at.isoformat()
         }
     }
 
@@ -156,7 +153,7 @@ async def get_user_profile(current_user: User = Depends(get_current_user)):
         "nickname": current_user.nickname,
         "gender": current_user.gender,
         "phone": current_user.phone,
-        "accountStatus": current_user.accountStatus,
+        "account_status": current_user.account_status,
         "role": current_user.role,
     }
 

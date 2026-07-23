@@ -22,7 +22,7 @@ service.interceptors.request.use(
 
 service.interceptors.response.use(
   (response) => {
-    // ⭐ 关键：如果是文件流，返回完整 response
+    // 文件下载需要保留响应头和状态码。
     if (response.config.responseType === 'blob') {
       return response
     }

@@ -21,6 +21,7 @@ QuintAI 是一套文档智能处理系统，由 FastAPI 后端、Vue 3 前端和
 - 后端：FastAPI、SQLAlchemy、Pydantic、LangChain、LangGraph；
 - 前端：Vue 3、Pinia、Vue Router、Axios、ECharts、ExcelJS、Vite；
 - 文档处理：python-docx、openpyxl、pandas；
+- 数据与任务：PostgreSQL、Redis、Celery、Alembic；
 - 部署：Docker、Docker Compose。
 
 ## 项目结构
@@ -28,6 +29,7 @@ QuintAI 是一套文档智能处理系统，由 FastAPI 后端、Vue 3 前端和
 ```text
 .
 |-- backend/                 # Python 后端及服务端 AI 能力
+|   |-- alembic/             # 数据库版本迁移
 |   |-- src/docnexus/        # 可安装的应用包
 |   `-- tests/               # 单元、契约和真实接口验收测试
 |-- frontend/                # Vue 3 + Vite 前端
@@ -57,10 +59,17 @@ Copy-Item .env.example .env
 
 ## 启动项目
 
-启动后端：
+本地启动前先执行数据库迁移：
 
 ```powershell
+python -m alembic upgrade head
 uvicorn docnexus.main:app --host 127.0.0.1 --port 8000 --reload
+```
+
+AI 接口采用异步任务模式。本地联调还需启动 Redis，并在另一个终端启动 Worker：
+
+```powershell
+celery -A docnexus.worker.celery_app:celery_app worker --loglevel=INFO
 ```
 
 启动前端：
@@ -94,8 +103,8 @@ npm audit --omit=dev
 docker compose up --build
 ```
 
-生产容器通过 8000 端口同时提供编译后的前端和 API。SQLite 数据保存在
-`docnexus-data` 数据卷中，报告目录挂载到仓库的 `reports/`。
+Compose 会启动 API、Worker、PostgreSQL 和 Redis。API 通过 8000 端口同时提供
+编译后的前端和接口；业务数据、队列状态和任务文件分别使用独立数据卷持久化。
 
 更多内容请查看[文档索引](docs/README.md)。
 

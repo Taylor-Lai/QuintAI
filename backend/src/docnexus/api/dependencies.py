@@ -26,7 +26,9 @@ async def get_current_user(
     user = db.query(User).filter(User.id == user_id).first()
     if user is None:
         raise credentials_exception
-    if user.accountStatus != "正常":
+    if int(payload.get("ver", -1)) != int(user.token_version or 0):
+        raise credentials_exception
+    if user.account_status != "正常":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="账号已被禁用")
     return user
 

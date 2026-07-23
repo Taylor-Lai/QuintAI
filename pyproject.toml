@@ -23,6 +23,12 @@ ignore_missing_imports = true
 check_untyped_defs = true
 warn_unused_ignores = true
 files = [
+  "backend/src/docnexus/api",
+  "backend/src/docnexus/core",
+  "backend/src/docnexus/db",
+  "backend/src/docnexus/repositories",
+  "backend/src/docnexus/services",
+  "backend/src/docnexus/worker",
   "backend/src/docnexus/ai/table_engine/execution",
   "backend/src/docnexus/ai/table_engine/planning",
   "backend/src/docnexus/ai/table_engine/quality.py",

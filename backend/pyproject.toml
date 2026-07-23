@@ -10,6 +10,8 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
 dependencies = [
+  "alembic>=1.16,<2",
+  "celery[redis]>=5.5,<6",
   "fastapi>=0.135,<1",
   "langchain-core>=1.4,<2",
   "langchain-openai>=1.2,<2",
@@ -23,6 +25,8 @@ dependencies = [
   "python-dotenv>=1.2,<2",
   "python-jose[cryptography]>=3.5,<4",
   "python-multipart>=0.0.22,<1",
+  "psycopg[binary]>=3.2,<4",
+  "redis>=6,<7",
   "sqlalchemy>=2.0,<3",
   "uvicorn[standard]>=0.41,<1",
 ]

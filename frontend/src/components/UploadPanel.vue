@@ -684,7 +684,9 @@ import { createExcelBlob, XLSX_MIME_TYPE } from '../utils/excel'
 import {
   uploadDocChatApi,
   uploadDocExtractApi,
-  uploadTableFillApi
+  uploadTableFillApi,
+  waitForTask,
+  downloadTaskApi
 } from '../api/feature'
 import { useUserStore } from '../stores/user'
 
@@ -732,7 +734,6 @@ const resultObjectUrl = ref('')
 
 const progress = ref(0)
 const progressText = ref('正在准备任务...')
-let progressTimer = null
 
 const typeNameMap = {
   'doc-chat': '文档智能操作交互',
@@ -740,29 +741,6 @@ const typeNameMap = {
   'table-fill': '表格自定义数据填写'
 }
 
-const progressStageMap = {
-  'doc-chat': [
-    { limit: 18, text: '正在校验文件与指令...' },
-    { limit: 42, text: '正在解析文档结构...' },
-    { limit: 68, text: '正在执行智能操作...' },
-    { limit: 88, text: '正在整理输出内容...' },
-    { limit: 100, text: '正在完成结果封装...' }
-  ],
-  'doc-extract': [
-    { limit: 18, text: '正在校验上传文件...' },
-    { limit: 40, text: '正在识别文本内容...' },
-    { limit: 66, text: '正在提取目标字段...' },
-    { limit: 88, text: '正在整理识别结果...' },
-    { limit: 100, text: '正在生成返回数据...' }
-  ],
-  'table-fill': [
-    { limit: 18, text: '正在校验模板与源文档...' },
-    { limit: 40, text: '正在分析模板结构...' },
-    { limit: 66, text: '正在匹配源数据内容...' },
-    { limit: 88, text: '正在写入表格结果...' },
-    { limit: 100, text: '正在完成输出封装...' }
-  ]
-}
 
 const activeTemplateFieldLabels = computed(() => {
   const template = activeTemplateMeta.value
@@ -831,47 +809,7 @@ const clearInputElements = () => {
   }
 }
 
-const stopFakeProgress = () => {
-  if (progressTimer) {
-    clearInterval(progressTimer)
-    progressTimer = null
-  }
-}
-
-const updateProgressText = () => {
-  const stages = progressStageMap[props.type] || progressStageMap['doc-chat']
-  const current = stages.find((item) => progress.value <= item.limit) || stages[stages.length - 1]
-  progressText.value = current.text
-}
-
-const startFakeProgress = () => {
-  stopFakeProgress()
-  progress.value = 0
-  progressText.value = '正在准备任务...'
-
-  progressTimer = setInterval(() => {
-    if (progress.value >= 92) return
-
-    const step =
-      progress.value < 18 ? 4 :
-      progress.value < 40 ? 3 :
-      progress.value < 70 ? 2 :
-      1
-
-    progress.value = Math.min(progress.value + step, 92)
-    updateProgressText()
-  }, 220)
-}
-
-const finishFakeProgress = async () => {
-  stopFakeProgress()
-  progress.value = 100
-  updateProgressText()
-  await new Promise((resolve) => setTimeout(resolve, 280))
-}
-
 const resetProgressState = () => {
-  stopFakeProgress()
   progress.value = 0
   progressText.value = '正在准备任务...'
 }
@@ -904,7 +842,6 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   clearResultFileState()
-  stopFakeProgress()
 })
 
 const triggerSelectFile = () => {
@@ -1091,6 +1028,17 @@ const normalizeApiResponse = (rawResponse, fallbackFileName = '') => {
   return responseData
 }
 
+const waitForSubmittedTask = async (submission, fallbackFileName = '') => {
+  const task = await waitForTask(submission.id, (current) => {
+    progress.value = Math.max(0, Math.min(100, Number(current.progress) || 0))
+    progressText.value = current.stage || '正在处理...'
+  })
+  if (task.has_file) {
+    return normalizeApiResponse(await downloadTaskApi(task.id), task.filename || fallbackFileName)
+  }
+  return task.result || task
+}
+
 const getLoadingTitle = () => {
   if (props.type === 'doc-chat') return '文档内容处理中'
   if (props.type === 'doc-extract') return '字段内容提取中'
@@ -1160,14 +1108,13 @@ const handleDocChatUpload = async () => {
 
   loading.value = true
   clearResultState()
-  startFakeProgress()
+  progress.value = 0
+  progressText.value = '任务已提交，等待执行...'
 
   try {
     const fallbackFileName = selectedFile.value.name.replace(/(\.[^.]+)?$/, '_result.docx')
-    const res = await uploadDocChatApi(formData)
-    await finishFakeProgress()
-
-    const normalizedRes = normalizeApiResponse(res, fallbackFileName)
+    const submission = await uploadDocChatApi(formData)
+    const normalizedRes = await waitForSubmittedTask(submission, fallbackFileName)
     resultData.value = normalizedRes
 
     userStore.addHistoryRecord({
@@ -1178,7 +1125,6 @@ const handleDocChatUpload = async () => {
       summary: getSummaryFromResponse(normalizedRes) || commandText.value.trim()
     })
   } catch (error) {
-    stopFakeProgress()
     alert(error?.message || '上传失败')
   } finally {
     loading.value = false
@@ -1203,13 +1149,12 @@ const handleDocExtractUpload = async () => {
 
   loading.value = true
   clearResultState()
-  startFakeProgress()
+  progress.value = 0
+  progressText.value = '任务已提交，等待执行...'
 
   try {
-    const res = await uploadDocExtractApi(formData)
-    await finishFakeProgress()
-
-    const normalizedRes = normalizeApiResponse(res, extractFile.value.name)
+    const submission = await uploadDocExtractApi(formData)
+    const normalizedRes = await waitForSubmittedTask(submission, extractFile.value.name)
     resultData.value = normalizedRes
 
     userStore.addHistoryRecord({
@@ -1220,7 +1165,6 @@ const handleDocExtractUpload = async () => {
       summary: getSummaryFromResponse(normalizedRes) || fieldsText.value.trim()
     })
   } catch (error) {
-    stopFakeProgress()
     alert(error?.message || '上传失败')
   } finally {
     loading.value = false
@@ -1250,14 +1194,13 @@ const handleTableFillUpload = async () => {
 
   loading.value = true
   clearResultState()
-  startFakeProgress()
+  progress.value = 0
+  progressText.value = '任务已提交，等待执行...'
 
   try {
     const fallbackFileName = `filled_${templateFile.name}`
-    const res = await uploadTableFillApi(formData)
-    await finishFakeProgress()
-
-    const normalizedRes = normalizeApiResponse(res, fallbackFileName)
+    const submission = await uploadTableFillApi(formData)
+    const normalizedRes = await waitForSubmittedTask(submission, fallbackFileName)
     resultData.value = normalizedRes
 
     const templateSourceName =
@@ -1273,7 +1216,6 @@ const handleTableFillUpload = async () => {
       summary: getSummaryFromResponse(normalizedRes) || '表格填写完成'
     })
   } catch (error) {
-    stopFakeProgress()
     alert(error?.message || '上传失败')
   } finally {
     loading.value = false

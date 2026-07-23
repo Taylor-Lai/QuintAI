@@ -5,6 +5,8 @@ import docx
 import pandas as pd
 from fastapi import HTTPException, UploadFile
 
+from docnexus.services.upload_security import read_upload_limited, validate_upload_content
+
 
 class DocumentParser:
     """文档解析器：支持 docx, xlsx, txt, md"""
@@ -23,9 +25,10 @@ class DocumentParser:
         suffix = os.path.splitext(filename)[1].lower()
 
         # 读取文件内容到内存
-        content_bytes = await file.read()
+        content_bytes = await read_upload_limited(file)
 
         try:
+            validate_upload_content(filename, content_bytes, {".docx", ".xlsx", ".txt", ".md"})
             if suffix == ".docx":
                 text = DocumentParser._parse_docx(content_bytes)
             elif suffix == ".xlsx":
@@ -41,6 +44,8 @@ class DocumentParser:
                 "char_count": len(text),
                 "file_type": suffix,
             }
+        except HTTPException:
+            raise
         except Exception as e:
             raise HTTPException(500, f"文件解析失败: {str(e)}")
 

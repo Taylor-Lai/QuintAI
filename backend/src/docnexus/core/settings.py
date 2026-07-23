@@ -27,6 +27,17 @@ class Settings:
     cors_origins: tuple[str, ...]
     static_dir: Path
     database_url: str
+    data_dir: Path = Path("data")
+    max_upload_bytes: int = 25 * 1024 * 1024
+    max_upload_files: int = 10
+    max_archive_entries: int = 2000
+    max_archive_uncompressed_bytes: int = 100 * 1024 * 1024
+    task_timeout_seconds: int = 900
+    task_max_attempts: int = 2
+    rate_limit_window_seconds: int = 60
+    auth_rate_limit: int = 10
+    ai_rate_limit: int = 6
+    redis_url: str = "redis://localhost:6379/0"
 
     @property
     def is_production(self) -> bool:
@@ -69,4 +80,17 @@ def get_settings() -> Settings:
         ),
         static_dir=Path(os.getenv("STATIC_DIR", "static")),
         database_url=os.getenv("DATABASE_URL", "sqlite:///./doc_system.db"),
+        data_dir=Path(os.getenv("DATA_DIR", "data")),
+        max_upload_bytes=int(os.getenv("MAX_UPLOAD_BYTES", str(25 * 1024 * 1024))),
+        max_upload_files=int(os.getenv("MAX_UPLOAD_FILES", "10")),
+        max_archive_entries=int(os.getenv("MAX_ARCHIVE_ENTRIES", "2000")),
+        max_archive_uncompressed_bytes=int(
+            os.getenv("MAX_ARCHIVE_UNCOMPRESSED_BYTES", str(100 * 1024 * 1024))
+        ),
+        task_timeout_seconds=int(os.getenv("TASK_TIMEOUT_SECONDS", "900")),
+        task_max_attempts=int(os.getenv("TASK_MAX_ATTEMPTS", "2")),
+        rate_limit_window_seconds=int(os.getenv("RATE_LIMIT_WINDOW_SECONDS", "60")),
+        auth_rate_limit=int(os.getenv("AUTH_RATE_LIMIT", "10")),
+        ai_rate_limit=int(os.getenv("AI_RATE_LIMIT", "6")),
+        redis_url=os.getenv("REDIS_URL", "redis://localhost:6379/0"),
     )

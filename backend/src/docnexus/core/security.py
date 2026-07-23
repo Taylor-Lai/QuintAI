@@ -1,6 +1,7 @@
 """Password hashing and JWT token primitives."""
 
-from datetime import datetime, timedelta
+import uuid
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from jose import JWTError, jwt
@@ -26,10 +27,10 @@ class AuthService:
     @staticmethod
     def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
         settings = get_settings()
-        expire = datetime.utcnow() + (
+        expire = datetime.now(timezone.utc) + (
             expires_delta or timedelta(minutes=settings.access_token_expire_minutes)
         )
-        payload = {**data, "exp": expire}
+        payload = {**data, "exp": expire, "iat": datetime.now(timezone.utc), "jti": uuid.uuid4().hex}
         return jwt.encode(payload, settings.require_secret_key(), algorithm=ALGORITHM)
 
     @staticmethod

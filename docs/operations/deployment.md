@@ -1,29 +1,36 @@
 # 部署指南
 
-## 构建容器
-
-```powershell
-docker build -f deploy/docker/Dockerfile -t quintai:latest .
-```
-
-镜像使用 Node 构建阶段和 Python 运行阶段。最终运行镜像只包含编译后的前端、
-一体化后端包和 Python 运行依赖。
-
-## 使用 Compose
+## 启动
 
 ```powershell
 Copy-Item .env.example .env
 docker compose up --build -d
+docker compose ps
 ```
 
-生产部署前应完成以下配置：
+Compose 包含以下服务：
 
-- 设置至少 32 个字符的随机 `SECRET_KEY`；
-- 严格限制 `CORS_ORIGINS`；
-- 配置模型供应商凭据；
-- 使用托管密钥注入，不提交 `.env`。
+- `app`：FastAPI、编译后的前端和数据库迁移；
+- `worker`：独立执行 AI 与文档任务；
+- `postgres`：业务数据和任务状态；
+- `redis`：任务队列与结果后端。
 
-默认 Compose 服务将 SQLite 数据持久化到 `/app/data`。多实例部署应通过
-`DATABASE_URL` 配置托管关系型数据库，不得让多个实例共享 SQLite 文件。
+生产部署前必须替换 `SECRET_KEY` 和 `POSTGRES_PASSWORD`，限制 `CORS_ORIGINS`，
+并通过密钥管理系统注入模型凭据。不得提交 `.env`。
 
-健康检查接口：`GET /health`。
+## 健康检查
+
+- `GET /health/live`：进程存活；
+- `GET /health/ready`：检查 PostgreSQL 与 Redis；
+- `GET /health`：基础服务信息。
+
+容器以非 root 用户运行。PostgreSQL、Redis 和任务文件使用不同的数据卷；删除数据卷
+会永久清除相应数据，升级时不要执行 `docker compose down -v`。
+
+## 数据库迁移
+
+API 启动前自动执行 `alembic upgrade head`。手工检查版本：
+
+```powershell
+docker compose exec app alembic current
+```

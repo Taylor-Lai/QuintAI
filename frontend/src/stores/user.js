@@ -113,8 +113,6 @@ export const useUserStore = defineStore('user', {
       this.loading = true
       try {
         const res = await loginApi(payload)
-        console.log('loginAction 返回 res =', res)
-
         // 按后端返回结构取值
         const token = res.access_token
         const user = res.user_info
@@ -141,8 +139,6 @@ export const useUserStore = defineStore('user', {
       this.loading = true
       try {
         const res = await registerApi(payload)
-        console.log('registerAction 返回 res =', res)
-
         // 注册接口当前不返回 token
         return res
       } finally {

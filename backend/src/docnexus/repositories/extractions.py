@@ -1,12 +1,12 @@
 import logging
 import uuid
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Any
 
-from sqlalchemy import String  # ← 添加这行
+from sqlalchemy import String
 from sqlalchemy.orm import Session
 
-from docnexus.db import ExtractionRecord, FileRecord
+from docnexus.db import ExtractionRecord
 
 logger = logging.getLogger(__name__)
 
@@ -19,23 +19,27 @@ class ExtractionRepository:
         db: Session,
         filename: str,
         file_type: str,
-        fields_requested: List[str],
-        extracted_data: Dict,  # 修复了变量名拼写错误 extracted_ Dict -> extracted_data
+        fields_requested: list[str],
+        extracted_data: dict[str, Any],
+        user_id: str,
+        task_id: str | None = None,
         content_preview: str = "",
         status: str = "success",
     ) -> ExtractionRecord:
         """保存提取记录"""
-        record_id = str(uuid.uuid4())[:8]
+        record_id = uuid.uuid4().hex
 
         record = ExtractionRecord(
             id=record_id,
+            user_id=user_id,
+            task_id=task_id,
             filename=filename,
             file_type=file_type,
             fields_requested=fields_requested,
             extracted_data=extracted_data,
             content_preview=content_preview[:1000] if content_preview else "",
             status=status,
-            created_at=datetime.now(),  # 补充创建时间（如果模型需要）
+            created_at=datetime.now(),
         )
 
         try:
@@ -44,25 +48,28 @@ class ExtractionRepository:
             db.refresh(record)
             logger.info("Saved extraction record: %s", record_id)
             return record
-        except Exception as e:
+        except Exception:
             db.rollback()  # 出错时回滚事务
             logger.exception("Failed to save extraction record")
-            raise e  # 抛出异常让上层处理
+            raise
 
     @staticmethod
-    def get_extraction(db: Session, record_id: str) -> Optional[ExtractionRecord]:
+    def get_extraction(db: Session, record_id: str, user_id: str) -> ExtractionRecord | None:
         """查询提取记录"""
         return (
-            db.query(ExtractionRecord).filter(ExtractionRecord.id == record_id).first()
+            db.query(ExtractionRecord)
+            .filter(ExtractionRecord.id == record_id, ExtractionRecord.user_id == user_id)
+            .first()
         )
 
     @staticmethod
     def list_extractions(
-        db: Session, limit: int = 20, offset: int = 0
-    ) -> List[ExtractionRecord]:
+        db: Session, user_id: str, limit: int = 20, offset: int = 0
+    ) -> list[ExtractionRecord]:
         """获取提取记录列表"""
         return (
             db.query(ExtractionRecord)
+            .filter(ExtractionRecord.user_id == user_id)
             .order_by(ExtractionRecord.created_at.desc())
             .offset(offset)
             .limit(limit)
@@ -70,12 +77,12 @@ class ExtractionRepository:
         )
 
     @staticmethod
-    def delete_extraction(db: Session, record_id: str) -> bool:
+    def delete_extraction(db: Session, record_id: str, user_id: str) -> bool:
         """删除提取记录"""
         try:
             record = (
                 db.query(ExtractionRecord)
-                .filter(ExtractionRecord.id == record_id)
+                .filter(ExtractionRecord.id == record_id, ExtractionRecord.user_id == user_id)
                 .first()
             )
             if record:
@@ -83,46 +90,13 @@ class ExtractionRepository:
                 db.commit()
                 return True
             return False
-        except Exception as e:
+        except Exception:
             db.rollback()
             logger.exception("Failed to delete extraction record")
-            raise e
+            raise
 
     @staticmethod
-    def save_file(
-        db: Session,
-        original_filename: str,
-        stored_path: str,
-        file_size: int,
-        file_type: str,
-        parsed_content: str = "",
-    ) -> FileRecord:
-        """保存文件记录"""
-        record_id = str(uuid.uuid4())[:8]
-
-        record = FileRecord(
-            id=record_id,
-            original_filename=original_filename,
-            stored_path=stored_path,
-            file_size=file_size,
-            file_type=file_type,
-            parsed_content=parsed_content[:5000] if parsed_content else "",
-            created_at=datetime.now(),  # 补充创建时间
-        )
-
-        try:
-            db.add(record)
-            db.commit()
-            db.refresh(record)
-            logger.info("Saved file record: %s", record_id)
-            return record
-        except Exception as e:
-            db.rollback()
-            logger.exception("Failed to save file record")
-            raise e
-
-    @staticmethod
-    def search_extractions(db: Session, keyword: str) -> List[ExtractionRecord]:
+    def search_extractions(db: Session, keyword: str, user_id: str) -> list[ExtractionRecord]:
         """搜索提取记录（支持多字段搜索）"""
         from sqlalchemy import or_
 
@@ -130,6 +104,7 @@ class ExtractionRepository:
         return (
             db.query(ExtractionRecord)
             .filter(
+                ExtractionRecord.user_id == user_id,
                 or_(
                     ExtractionRecord.filename.contains(keyword),
                     ExtractionRecord.content_preview.contains(keyword),

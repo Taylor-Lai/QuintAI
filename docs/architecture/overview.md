@@ -1,45 +1,40 @@
 # 系统架构
 
-## 系统边界
-
 ```mermaid
 flowchart LR
-    Web["frontend<br/>Vue 应用"] -->|HTTP| API["backend<br/>FastAPI 应用"]
-    API --> DB[("配置的数据库")]
-    API --> AI["docnexus.ai<br/>AI 处理模块"]
-    AI --> LLM["配置的模型供应商"]
+    Web["Vue 前端"] -->|"提交任务 / 查询进度 / 下载结果"| API["FastAPI API"]
+    API --> PG[("PostgreSQL")]
+    API --> Redis[("Redis")]
+    Redis --> Worker["Celery Worker"]
+    Worker --> AI["文档与表格处理引擎"]
+    Worker --> PG
+    AI --> LLM["模型供应商"]
+    AI --> Files[("任务文件卷")]
 ```
 
-`frontend` 通过 HTTP API 与服务端交互。`backend` 负责身份认证、数据持久化、
-任务编排、文档处理和 AI 调用。
+耗时 AI 操作不占用 HTTP 请求生命周期。API 完成鉴权和文件安全校验后创建任务，
+Worker 从 Redis 取任务执行，并将进度、结果、重试次数和错误写入 PostgreSQL。
 
 ## 后端分层
 
 ```text
 docnexus/
-|-- api/
-|   |-- dependencies.py      # 身份认证与授权依赖
-|   |-- router.py            # 路由聚合
-|   `-- routes/              # 按 HTTP 能力拆分的路由模块
-|-- ai/
-|   |-- workflows.py         # 路由调用的稳定 AI 工作流门面
-|   |-- contracts.py         # AI 工作流输入输出契约
-|   |-- knowledge_graph/     # 知识图谱领域
-|   `-- table_engine/        # 解析、检索、填表与校验流水线
-|-- core/                    # 配置与安全基础能力
-|-- db/                      # 模型、会话、初始化和迁移兼容
-|-- repositories/            # 持久化操作
+|-- api/                     # HTTP 路由、鉴权与任务接口
+|-- ai/                      # 文档、提取和表格处理领域能力
+|-- core/                    # 配置、安全与限流
+|-- db/                      # SQLAlchemy 模型和会话
+|-- repositories/            # 用户隔离的数据访问
 |-- schemas/                 # HTTP 传输契约
-|-- services/                # 应用服务
-`-- main.py                  # 应用工厂与静态资源集成
+|-- services/                # 文件解析与上传安全
+|-- worker/                  # Celery 任务执行器
+`-- main.py                  # ASGI 应用工厂
 ```
 
-依赖方向由外向内：路由可以调用应用服务、仓储和 AI 工作流门面；仓储调用数据库
-层。AI 模块不得导入 FastAPI 路由或前端代码。
+数据库结构由 `backend/alembic` 中的版本迁移管理。每条提取记录和任务都必须归属于
+用户；下载、查询、取消和删除均再次校验所有权。
 
-## 兼容性保证
+## 任务状态
 
-- 路由契约测试保护现有公开 API 路径；
-- 保留现有前端路由和请求数据结构；
-- 开发数据库默认仍为 `./doc_system.db`；
-- 生产数据库位置通过 `DATABASE_URL` 配置。
+任务状态按 `queued → running → succeeded/failed/cancelled` 变化。失败任务按配置自动
+重试；用户也可对失败或取消的任务重新提交。Worker 使用软、硬超时和延迟确认，
+容器异常退出后消息会重新投递。

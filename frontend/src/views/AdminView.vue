@@ -413,8 +413,8 @@ const normalizeUser = (item = {}) => {
     isAdmin,
     accountStatus: normalizeAccountStatus(item.accountStatus ?? item.account_status),
     loginStatus: normalizeLoginStatus(item.loginStatus ?? item.login_status),
-    lastLoginTime: formatDateTime(item.lastLoginTime ?? item.last_login_time),
-    createTime: formatDateTime(item.createTime ?? item.create_time),
+    lastLoginTime: formatDateTime(item.lastLoginTime ?? item.last_login_at),
+    createTime: formatDateTime(item.createTime ?? item.created_at),
     lastLoginIp: item.lastLoginIp ?? item.last_login_ip ?? '-',
     remark: item.remark ?? item.notes ?? ''
   }
@@ -432,14 +432,8 @@ const getUserPage = async () => {
     }
 
     const res = await getUserPageApi(params)
-    console.log('用户列表接口返回：', res)
-
     const data = unwrapData(res)
-    const rawList = Array.isArray(data.list)
-      ? data.list
-      : Array.isArray(data.records)
-        ? data.records
-        : []
+    const rawList = Array.isArray(data.items) ? data.items : []
 
     const normalizedList = rawList.map(normalizeUser)
     userList.value = normalizedList
@@ -457,8 +451,6 @@ const getUserPage = async () => {
 const getStatistics = async () => {
   try {
     const res = await getAdminStatisticsApi()
-    console.log('统计接口返回：', res)
-
     const data = unwrapData(res)
     statistics.totalUsers = Number(data.total_users ?? data.totalUsers ?? 0)
     statistics.onlineUsers = Number(data.online_users ?? data.onlineUsers ?? 0)
@@ -502,7 +494,6 @@ const handleDetail = async (id) => {
 
   try {
     const res = await getUserDetailApi(id)
-    console.log('用户详情接口返回：', res)
     currentUser.value = normalizeUser(unwrapData(res))
   } catch (error) {
     console.error('获取用户详情失败：', error)

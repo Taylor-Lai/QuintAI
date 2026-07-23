@@ -1,7 +1,6 @@
 """FastAPI application factory and production static-file integration."""
 
 import logging
-import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -11,25 +10,29 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from docnexus.api.router import api_router
+from docnexus.core.observability import OperationalMiddleware, configure_logging
+from docnexus.core.rate_limit import RateLimitMiddleware
 from docnexus.core.settings import get_settings
-from docnexus.db import init_db
+from docnexus.db.bootstrap import create_initial_admin
 
-logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
-logger = logging.getLogger(__name__)
 settings = get_settings()
+configure_logging(json_logs=settings.is_production)
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    init_db()
     if settings.is_production:
         settings.require_secret_key()
+    create_initial_admin()
     logger.info("Service startup completed")
     yield
 
 
 def create_app() -> FastAPI:
     application = FastAPI(title="文档理解系统", version="1.0.0", lifespan=lifespan)
+    application.add_middleware(OperationalMiddleware)
+    application.add_middleware(RateLimitMiddleware)
     application.add_middleware(
         CORSMiddleware,
         allow_origins=list(settings.cors_origins),

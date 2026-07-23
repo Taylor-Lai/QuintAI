@@ -1,18 +1,88 @@
-name: docnexus
+name: quintai
+
+x-app-base: &app-base
+  image: quintai-app:latest
+  build:
+    context: .
+    dockerfile: deploy/docker/Dockerfile
+  env_file:
+    - .env
+  environment:
+    APP_ENV: production
+    DATA_DIR: /app/data
+    DATABASE_URL: postgresql+psycopg://quintai:${POSTGRES_PASSWORD:-quintai_local}@postgres:5432/quintai
+    REDIS_URL: redis://redis:6379/0
+  volumes:
+    - task-data:/app/data
+  restart: unless-stopped
 
 services:
   app:
-    build:
-      context: .
-      dockerfile: deploy/docker/Dockerfile
-    env_file:
-      - .env
+    <<: *app-base
+    command: ["sh", "-c", "alembic upgrade head && uvicorn docnexus.main:app --host 0.0.0.0 --port 8000"]
     ports:
       - "8000:8000"
+    mem_limit: 2g
+    cpus: 2.0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+
+  worker:
+    <<: *app-base
+    command: ["sh", "-c", "celery -A docnexus.worker.celery_app:celery_app worker --loglevel=INFO --concurrency=${WORKER_CONCURRENCY:-2}"]
+    mem_limit: 4g
+    cpus: 2.0
+    stop_grace_period: 45s
+    depends_on:
+      app:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A docnexus.worker.celery_app:celery_app inspect ping -d celery@$$HOSTNAME --timeout=5 | grep -q pong"]
+      interval: 20s
+      timeout: 10s
+      retries: 3
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: quintai
+      POSTGRES_USER: quintai
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-quintai_local}
     volumes:
-      - docnexus-data:/app/data
-      - ./reports:/app/reports
+      - postgres-data:/var/lib/postgresql/data
+    mem_limit: 1g
+    cpus: 1.0
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U quintai -d quintai"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    volumes:
+      - redis-data:/data
+    mem_limit: 512m
+    cpus: 0.5
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
     restart: unless-stopped
 
 volumes:
-  docnexus-data:
+  postgres-data:
+  redis-data:
+  task-data:
