@@ -16,10 +16,10 @@ logger = logging.getLogger(__name__)
 
 def _schema_classes():
     try:
-        from docnexus.ai.contracts import Mod2_ExtractOutput
+        from docnexus.ai.contracts import InformationExtractionOutput
     except ImportError:  # pragma: no cover - local package fallback
-        from .contracts import Mod2_ExtractOutput
-    return Mod2_ExtractOutput
+        from .contracts import InformationExtractionOutput
+    return InformationExtractionOutput
 
 EXTRACTION_CHUNK_SIZE = 6000
 EXTRACTION_CHUNK_OVERLAP = 500
@@ -115,7 +115,7 @@ def validate_field_value(field_name: str, raw_value: object, normalized_value: o
     }
 
 
-def merge_chunk_extractions(
+def _merge_chunk_candidates(
     chunk_results: list[dict[str, object]],
     chunks: list[dict[str, object]],
     target_entities: list[str],
@@ -220,7 +220,7 @@ def _read_document_text(file_path: str) -> str:
 
 
 def handle_information_extraction(input_data):
-    Mod2_ExtractOutput = _schema_classes()
+    output_schema = _schema_classes()
     try:
         full_text = _read_document_text(input_data.file_path)
         fields_spec = {
@@ -250,14 +250,11 @@ def handle_information_extraction(input_data):
             chunk_results.append({} if result is None else result.model_dump())
 
         extracted_data = merge_chunk_extractions(chunk_results, chunks, input_data.target_entities, full_text)
-        return Mod2_ExtractOutput(status="success", extracted_data=extracted_data)
+        return output_schema(status="success", extracted_data=extracted_data)
 
     except Exception:
         logger.exception("Information extraction failed for %s", input_data.file_path)
-        return Mod2_ExtractOutput(status="failed", message="信息提取失败，请查看服务端日志。")
-
-
-_legacy_merge_chunk_extractions = merge_chunk_extractions
+        return output_schema(status="failed", message="信息提取失败，请查看服务端日志。")
 
 
 _UNICODE_DATE_RE = re.compile(r"(\d{4})[年/-](\d{1,2})[月/-](\d{1,2})日?")
@@ -312,7 +309,7 @@ def merge_chunk_extractions(
     target_entities: list[str],
     full_text: str,
 ) -> dict[str, object]:
-    merged = _legacy_merge_chunk_extractions(chunk_results, chunks, target_entities, full_text)
+    merged = _merge_chunk_candidates(chunk_results, chunks, target_entities, full_text)
     meta = merged.setdefault("_meta", {})
     evidence = meta.setdefault("evidence", {})
     normalized = meta.setdefault("normalized", {})

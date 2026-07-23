@@ -1,13 +1,11 @@
-# any2table_engine/schemas.py
+"""Typed contracts for the three AI processing domains."""
+
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
 
-# ==========================================
-# 模块 1：文档智能操作交互 (格式排版)
-# ==========================================
-class Mod1_FormatInput(BaseModel):
+class DocumentOperationInput(BaseModel):
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
@@ -20,32 +18,26 @@ class Mod1_FormatInput(BaseModel):
     file_path: str = Field(..., description="待排版的原始 Word 文档绝对路径")
     natural_language_cmd: str = Field(..., description="用户的自然语言指令，例如：'把第一段变成红色字体，并且加粗'")
 
-class Mod1_FormatOutput(BaseModel):
+class DocumentOperationOutput(BaseModel):
     status: str = Field(..., description="success 或 failed")
     processed_file_path: Optional[str] = Field(None, description="排版修改后的新文件路径")
     message: Optional[str] = Field(None, description="执行结果描述或报错信息")
 
-# ==========================================
-# 模块 2：非结构化文档信息提取 (轻量级提取)
-# ==========================================
-class Mod2_ExtractInput(BaseModel):
+class InformationExtractionInput(BaseModel):
     file_path: str = Field(..., description="用户上传的单个文档路径")
     target_entities: List[str] = Field(..., description="想要提取的特定字段，例如：['项目名称', '负责人', '预算']")
 
-class Mod2_ExtractOutput(BaseModel):
+class InformationExtractionOutput(BaseModel):
     status: str = Field(..., description="success 或 failed")
     extracted_data: Dict[str, Any] = Field(default_factory=dict, description="提取出的结构化 JSON 数据")
     message: Optional[str] = Field(None, description="报错信息")
 
-# ==========================================
-# 模块 3：表格自定义数据填写 (多源融合填表)
-# ==========================================
-class Mod3_FusionInput(BaseModel):
+class TableFillingInput(BaseModel):
     task_id: str = Field(..., description="任务唯一标识")
     workspace_dir: str = Field(..., description="包含1个空模板和N个参考文件的目录")
     user_request: Optional[str] = Field(None, description="用户的附加自然语言要求")
 
-class Mod3_FusionOutput(BaseModel):
+class TableFillingOutput(BaseModel):
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
@@ -61,13 +53,3 @@ class Mod3_FusionOutput(BaseModel):
     output_excel_path: Optional[str] = Field(None, description="生成的目标文件路径（xlsx 或 docx）")
     warnings: List[str] = Field(default_factory=list, description="算法产生的警告信息")
     error_msg: Optional[str] = Field(None, description="报错信息")
-
-
-# New canonical names for the three AI domains.  The Mod1/2/3 names stay in
-# place for backend compatibility.
-DocumentOperationInput = Mod1_FormatInput
-DocumentOperationOutput = Mod1_FormatOutput
-InformationExtractionInput = Mod2_ExtractInput
-InformationExtractionOutput = Mod2_ExtractOutput
-TableFillingInput = Mod3_FusionInput
-TableFillingOutput = Mod3_FusionOutput

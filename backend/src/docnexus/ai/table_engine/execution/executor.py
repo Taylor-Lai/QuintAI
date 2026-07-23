@@ -20,7 +20,7 @@ class ExecutionResult:
 
 
 def plan_for_target_table(plan: TaskPlan | None, target_table_id: str) -> TaskPlan | None:
-    """Select operations explicitly assigned to a target table plus compatible global operations."""
+    """Select target-specific operations and operations that apply globally."""
     if plan is None:
         return None
     scoped = [
@@ -607,7 +607,7 @@ def _derive(records: list[StructuredRecord], params: dict[str, object]) -> bool:
 
 
 class TaskPlanExecutor:
-    """Execute supported operations while preserving compatibility with agent-produced records."""
+    """Execute supported operations against agent-produced records."""
 
     def execute(
         self,

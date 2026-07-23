@@ -18,46 +18,46 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from docnexus.ai.contracts import (
-    Mod1_FormatInput,
-    Mod1_FormatOutput,
-    Mod2_ExtractInput,
-    Mod2_ExtractOutput,
-    Mod3_FusionInput,
-    Mod3_FusionOutput,
+    DocumentOperationInput,
+    DocumentOperationOutput,
+    InformationExtractionInput,
+    InformationExtractionOutput,
+    TableFillingInput,
+    TableFillingOutput,
 )
 
 
 class TestSchemas(unittest.TestCase):
     """测试 Pydantic schema 模型"""
 
-    def test_mod1_input(self):
-        inp = Mod1_FormatInput(file_path="/tmp/a.docx", natural_language_cmd="加粗第一段")
+    def test_document_operation_input(self):
+        inp = DocumentOperationInput(file_path="/tmp/a.docx", natural_language_cmd="加粗第一段")
         self.assertEqual(inp.file_path, "/tmp/a.docx")
         self.assertEqual(inp.natural_language_cmd, "加粗第一段")
 
-    def test_mod1_output_success(self):
-        out = Mod1_FormatOutput(status="success", processed_file_path="/tmp/out.docx", message="OK")
+    def test_document_operation_output_success(self):
+        out = DocumentOperationOutput(status="success", processed_file_path="/tmp/out.docx", message="OK")
         self.assertEqual(out.status, "success")
         self.assertEqual(out.processed_file_path, "/tmp/out.docx")
 
-    def test_mod1_output_failed(self):
-        out = Mod1_FormatOutput(status="failed", message="出错了")
+    def test_document_operation_output_failed(self):
+        out = DocumentOperationOutput(status="failed", message="出错了")
         self.assertIsNone(out.processed_file_path)
 
-    def test_mod2_input(self):
-        inp = Mod2_ExtractInput(file_path="/tmp/a.docx", target_entities=["姓名", "年龄"])
+    def test_information_extraction_input(self):
+        inp = InformationExtractionInput(file_path="/tmp/a.docx", target_entities=["姓名", "年龄"])
         self.assertEqual(len(inp.target_entities), 2)
 
-    def test_mod2_output_default(self):
-        out = Mod2_ExtractOutput(status="success")
+    def test_information_extraction_output_default(self):
+        out = InformationExtractionOutput(status="success")
         self.assertEqual(out.extracted_data, {})
 
-    def test_mod3_input_optional_request(self):
-        inp = Mod3_FusionInput(task_id="t1", workspace_dir="/tmp/ws")
+    def test_table_filling_input_optional_request(self):
+        inp = TableFillingInput(task_id="t1", workspace_dir="/tmp/ws")
         self.assertIsNone(inp.user_request)
 
-    def test_mod3_output_warnings_default(self):
-        out = Mod3_FusionOutput(status="success", task_id="t1")
+    def test_table_filling_output_warnings_default(self):
+        out = TableFillingOutput(status="success", task_id="t1")
         self.assertEqual(out.warnings, [])
 
 

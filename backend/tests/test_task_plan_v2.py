@@ -81,7 +81,7 @@ def test_all_candidates_that_violate_constraints_are_removed() -> None:
     assert _finalize_candidates_by_task([candidate], task) == []
 
 
-def test_legacy_llm_constraints_compile_to_executable_types() -> None:
+def test_llm_constraints_compile_to_executable_types() -> None:
     task = TaskSpec("task", "fill_table", "template", target_fields=["门店", "区域", "销售额", "利润率"])
     result = {
         "constraints": [

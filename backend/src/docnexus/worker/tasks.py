@@ -6,7 +6,7 @@ from pathlib import Path
 
 from celery.exceptions import SoftTimeLimitExceeded
 
-from docnexus.ai.contracts import Mod1_FormatInput, Mod2_ExtractInput, Mod3_FusionInput
+from docnexus.ai.contracts import DocumentOperationInput, InformationExtractionInput, TableFillingInput
 from docnexus.ai.workflows import handle_module_1_format, handle_module_2_extract, handle_module_3_fusion
 from docnexus.db import SessionLocal, TaskRecord
 from docnexus.repositories.extractions import ExtractionRepository
@@ -25,6 +25,12 @@ def _update(task_id: str, **values) -> None:
         db.commit()
 
 
+def _is_cancelled(task_id: str) -> bool:
+    with SessionLocal() as db:
+        record = db.get(TaskRecord, task_id)
+        return record is None or record.cancel_requested or record.status == "cancelled"
+
+
 def _execute(task_id: str) -> None:
     with SessionLocal() as db:
         record = db.get(TaskRecord, task_id)
@@ -40,14 +46,14 @@ def _execute(task_id: str) -> None:
         db.commit()
 
     if kind == "document_edit":
-        edit_result = handle_module_1_format(Mod1_FormatInput(file_path=str(payload["file_path"]), natural_language_cmd=str(payload["command"])))
+        edit_result = handle_module_1_format(DocumentOperationInput(file_path=str(payload["file_path"]), natural_language_cmd=str(payload["command"])))
         if edit_result.status != "success":
             raise RuntimeError(edit_result.message)
         _update(task_id, output_path=edit_result.processed_file_path, output_name=payload["output_name"])
     elif kind == "document_extract":
         _update(task_id, progress=35, stage="正在提取字段")
         fields = [str(value) for value in payload["fields"]]
-        extract_result = handle_module_2_extract(Mod2_ExtractInput(file_path=str(payload["file_path"]), target_entities=fields))
+        extract_result = handle_module_2_extract(InformationExtractionInput(file_path=str(payload["file_path"]), target_entities=fields))
         if extract_result.status != "success":
             raise RuntimeError(extract_result.message)
         with SessionLocal() as db:
@@ -69,7 +75,7 @@ def _execute(task_id: str) -> None:
 
         _update(task_id, progress=30, stage="正在分析模板和源文档")
         fill_result = handle_module_3_fusion(
-            Mod3_FusionInput(task_id=task_id, workspace_dir=str(payload["workspace_dir"]), user_request=payload.get("user_request") or None),
+            TableFillingInput(task_id=task_id, workspace_dir=str(payload["workspace_dir"]), user_request=payload.get("user_request") or None),
             progress_callback=progress_callback,
         )
         if fill_result.status != "success":
@@ -83,6 +89,8 @@ def _execute(task_id: str) -> None:
 def process_task(self, task_id: str) -> None:
     try:
         _execute(task_id)
+        if _is_cancelled(task_id):
+            return
         _update(task_id, status="succeeded", progress=100, stage="处理完成", completed_at=datetime.now(), error_code=None, error_message=None)
     except SoftTimeLimitExceeded:
         _update(task_id, status="failed", stage="任务超时", error_code="TASK_TIMEOUT", error_message="任务超过最大执行时间", completed_at=datetime.now())

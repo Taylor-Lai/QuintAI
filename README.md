@@ -83,7 +83,7 @@ npm run dev
 ## 质量检查
 
 ```powershell
-pytest -m "not api_acceptance" --cov=docnexus.ai.table_engine.execution --cov=docnexus.ai.table_engine.planning --cov=docnexus.ai.table_engine.quality --cov-fail-under=75
+pytest -m "not api_acceptance" --cov=docnexus --cov-fail-under=59
 ruff check backend scripts
 mypy
 python scripts/evaluate_table_engine.py

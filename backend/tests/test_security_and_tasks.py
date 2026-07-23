@@ -11,11 +11,14 @@ from docnexus.core.security import AuthService
 from docnexus.db.models import Base, User
 from docnexus.repositories.extractions import ExtractionRepository
 from docnexus.repositories.tasks import TaskRepository
+from docnexus.schemas.auth import LoginRequest, UserCreate
 from docnexus.services.document_parser import DocumentParser
 from docnexus.services.upload_security import safe_filename, validate_upload_content
+from docnexus.worker import tasks as worker_tasks
 from fastapi import FastAPI, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from starlette.datastructures import Headers, UploadFile
@@ -110,3 +113,26 @@ def test_rate_limit_returns_retry_after(monkeypatch) -> None:
     response = client.post("/auth/login")
     assert response.status_code == 429
     assert int(response.headers["Retry-After"]) >= 1
+
+
+@pytest.mark.parametrize(
+    "schema,payload",
+    [
+        (UserCreate, {"username": "tester", "email": "test@example.com", "password": "密" * 25}),
+        (LoginRequest, {"email": "test@example.com", "password": "密" * 25}),
+    ],
+)
+def test_auth_passwords_reject_more_than_72_utf8_bytes(schema, payload) -> None:
+    with pytest.raises(ValidationError):
+        schema.model_validate(payload)
+
+
+def test_cancelled_task_is_not_overwritten_as_succeeded(monkeypatch) -> None:
+    updates: list[dict[str, object]] = []
+    monkeypatch.setattr(worker_tasks, "_execute", lambda _task_id: None)
+    monkeypatch.setattr(worker_tasks, "_is_cancelled", lambda _task_id: True)
+    monkeypatch.setattr(worker_tasks, "_update", lambda _task_id, **values: updates.append(values))
+
+    worker_tasks.process_task.run("cancelled-task")
+
+    assert updates == []

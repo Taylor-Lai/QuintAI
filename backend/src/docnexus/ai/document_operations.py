@@ -20,10 +20,10 @@ logger = logging.getLogger(__name__)
 
 def _schema_classes():
     try:
-        from docnexus.ai.contracts import Mod1_FormatOutput
+        from docnexus.ai.contracts import DocumentOperationOutput
     except ImportError:  # pragma: no cover - local package fallback
-        from .contracts import Mod1_FormatOutput
-    return Mod1_FormatOutput
+        from .contracts import DocumentOperationOutput
+    return DocumentOperationOutput
 
 
 class FormatAction(BaseModel):
@@ -468,11 +468,11 @@ def _write_operation_audit(
 
 
 def handle_document_operation(input_data):
-    Mod1_FormatOutput = _schema_classes()
+    output_schema = _schema_classes()
     try:
         doc_path = Path(input_data.file_path)
         if not doc_path.exists():
-            return Mod1_FormatOutput(status="failed", message=f"文件不存在: {doc_path}")
+            return output_schema(status="failed", message=f"文件不存在: {doc_path}")
 
         doc = Document(doc_path)
         preview_text = "\n".join(
@@ -524,7 +524,7 @@ def handle_document_operation(input_data):
                 if key not in existing:
                     plan.actions.append(action)
         if not plan.actions:
-            return Mod1_FormatOutput(status="failed", message="AI 未能生成任何格式修改动作，请尝试更具体的指令")
+            return output_schema(status="failed", message="AI 未能生成任何格式修改动作，请尝试更具体的指令")
 
         action_summaries = []
         action_reports = []
@@ -551,7 +551,7 @@ def handle_document_operation(input_data):
             warnings,
         )
         warning_text = f"；警告：{'；'.join(warnings)}" if warnings else ""
-        return Mod1_FormatOutput(
+        return output_schema(
             status="success",
             processed_file_path=str(output_path),
             message=f"文档智能操作完成，动作统计：{', '.join(action_summaries)}；审计报告：{audit_path}{warning_text}",
@@ -559,4 +559,4 @@ def handle_document_operation(input_data):
 
     except Exception:
         logger.exception("Document operation failed for %s", input_data.file_path)
-        return Mod1_FormatOutput(status="failed", message="文档操作失败，请查看服务端日志。")
+        return output_schema(status="failed", message="文档操作失败，请查看服务端日志。")

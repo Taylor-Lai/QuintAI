@@ -6,7 +6,6 @@ from fastapi.routing import APIRoute
 EXPECTED_ROUTES = {
     ("GET", "/"),
     ("GET", "/health"),
-    ("POST", "/api/upload"),
     ("GET", "/health/live"),
     ("GET", "/health/ready"),
     ("GET", "/doc-extract/search"),
@@ -36,7 +35,7 @@ EXPECTED_ROUTES = {
 }
 
 
-def test_public_route_contract_is_preserved() -> None:
+def test_public_route_contract_is_exact() -> None:
     actual = {
         (method, route.path)
         for route in app.routes
@@ -44,4 +43,4 @@ def test_public_route_contract_is_preserved() -> None:
         for method in route.methods
         if method not in {"HEAD", "OPTIONS"}
     }
-    assert EXPECTED_ROUTES <= actual
+    assert actual == EXPECTED_ROUTES

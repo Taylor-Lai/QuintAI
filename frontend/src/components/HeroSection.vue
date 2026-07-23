@@ -161,23 +161,6 @@ const banners = ref([
 
 const splitTitle = (title) => title.split('')
 
-const loadSettings = () => {
-  const saved = localStorage.getItem('system_settings')
-  if (!saved) return
-
-  try {
-    const parsed = JSON.parse(saved)
-    settings.value = {
-      siteName: parsed.siteName || '让复杂文档处理变得简单高效',
-      siteSubtitle:
-        parsed.siteSubtitle ||
-        '聚焦文档理解、信息提取、表格填写与在线编辑，帮助你快速完成从识别、分析到处理的全流程任务。'
-    }
-  } catch (error) {
-    console.error('读取系统设置失败：', error)
-  }
-}
-
 const goAuth = (item) => {
   if (userStore.isLogin) {
     router.push(item.path)
@@ -276,7 +259,6 @@ const onDragEnd = () => {
 }
 
 onMounted(() => {
-  loadSettings()
   startAutoPlay()
 })
 

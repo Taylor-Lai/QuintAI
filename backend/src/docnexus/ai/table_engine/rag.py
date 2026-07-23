@@ -87,7 +87,7 @@ class DefaultRagBackend(BaseRagBackend):
             notes = ["Router selected direct path; skipped RAG execution."]
         else:
             notes = [
-                f"Route {route} requested, but backend {self.name} is a placeholder and currently leaves evidence unchanged."
+                f"Route {route} requested with the pass-through backend; evidence remains unchanged."
             ]
         return RagResult(
             route=route,

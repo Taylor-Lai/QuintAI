@@ -10,7 +10,7 @@ x-app-base: &app-base
   environment:
     APP_ENV: production
     DATA_DIR: /app/data
-    DATABASE_URL: postgresql+psycopg://quintai:${POSTGRES_PASSWORD:-quintai_local}@postgres:5432/quintai
+    DATABASE_URL: postgresql+psycopg://quintai:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@postgres:5432/quintai
     REDIS_URL: redis://redis:6379/0
   volumes:
     - task-data:/app/data
@@ -56,7 +56,7 @@ services:
     environment:
       POSTGRES_DB: quintai
       POSTGRES_USER: quintai
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-quintai_local}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
     volumes:
       - postgres-data:/var/lib/postgresql/data
     mem_limit: 1g

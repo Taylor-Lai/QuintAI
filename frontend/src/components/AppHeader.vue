@@ -88,7 +88,7 @@
           <a
             href="#"
             class="nav-item"
-            :class="{ active: isGuidePage || isFeedbackPage }"
+            :class="{ active: isGuidePage }"
             @click.prevent
           >
             更多
@@ -104,26 +104,9 @@
               >
                 上手指南
               </div>
-              <div
-                class="dropdown-item"
-                :class="{ 'active-dropdown': isFeedbackPage }"
-                @click="goFeedback"
-              >
-                问题反馈
-              </div>
             </div>
           </transition>
         </div>
-
-        <!-- 我的资产：放在更多右侧 -->
-        <a
-          href="#"
-          class="nav-item"
-          :class="{ active: isMyAssetsPage }"
-          @click.prevent="goMyAssets"
-        >
-          我的资产
-        </a>
 
         <!-- guide 页面单独显示 -->
         <a
@@ -136,16 +119,6 @@
           上手指南
         </a>
 
-        <!-- feedback 页面单独显示 -->
-        <a
-          v-if="isFeedbackPage"
-          href="#"
-          class="nav-item"
-          :class="{ active: isFeedbackPage }"
-          @click.prevent="goFeedback"
-        >
-          问题反馈
-        </a>
       </nav>
 
       <div class="header-actions">
@@ -210,8 +183,6 @@ const isTemplatePage = computed(() => route.path.startsWith('/template'))
 const isEditorPage = computed(() => route.path.startsWith('/editor'))
 const isProfilePage = computed(() => route.path === '/profile')
 const isGuidePage = computed(() => route.path === '/guide')
-const isFeedbackPage = computed(() => route.path === '/feedback')
-const isMyAssetsPage = computed(() => route.path.startsWith('/my-assets'))
 
 const goHome = () => {
   showMenu.value = false
@@ -262,18 +233,6 @@ const goGuide = () => {
   showMoreMenu.value = false
   showMenu.value = false
   router.push('/guide')
-}
-
-const goFeedback = () => {
-  showMoreMenu.value = false
-  showMenu.value = false
-  router.push('/feedback')
-}
-
-const goMyAssets = () => {
-  showMenu.value = false
-  showMoreMenu.value = false
-  router.push('/my-assets')
 }
 
 const handleLogout = async () => {

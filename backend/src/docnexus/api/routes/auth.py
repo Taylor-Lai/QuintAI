@@ -38,7 +38,7 @@ async def register(user_data: UserCreate, db: Session = Depends(get_db)):
 
     # 创建用户
     user = User(
-        id=str(uuid.uuid4())[:8],
+        id=uuid.uuid4().hex,
         username=user_data.username,
         email=user_data.email,
         password_hash=AuthService.get_password_hash(user_data.password),

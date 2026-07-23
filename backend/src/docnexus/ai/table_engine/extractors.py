@@ -1,23 +1,15 @@
-"""Extractors.
-
-.. deprecated::
-    ``DefaultExtractor`` is a legacy fallback used only when ``build_rule_candidates()``
-    returns no results. The primary extraction path goes through
-    ``any2table.candidates.builders.build_rule_candidates`` and
-    ``any2table.merging.merger.merge_candidates``. Prefer that path for new development.
-"""
+"""Deterministic evidence extractors used by the table engine."""
 
 from __future__ import annotations
 
 import re
-import warnings
 from datetime import date, datetime
 
 from docnexus.ai.table_engine.core.models import EvidencePack, StructuredRecord, TaskSpec, TemplateSpec
 
 TEMPORAL_FIELD_TOKENS = ("日期", "时间", "时刻", "监测时间", "date", "time")
 
-# COVID schema 兼容常量 — 仅用于 _extract_covid_country_record 回退
+# COVID schema adapter constants used by the domain-specific extractor.
 COVID_COUNTRY_FIELDS = {"国家/地区", "大洲", "人均GDP", "人口", "每日检测数", "病例数"}
 PROVINCE_NAME_PATTERN = re.compile(r"^[\u4e00-\u9fff]{2,12}(?:省|自治区|直辖市|兵团)$")
 TITLE_DATE_PATTERN = re.compile(r"(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日")
@@ -668,7 +660,7 @@ def _extract_records_from_row_evidence(target_table, task_spec: TaskSpec, eviden
     return [_candidate_to_record(target_table, index, candidate) for index, candidate in enumerate(resolved_candidates)]
 
 
-# ── COVID 回退（保留用于向后兼容）──────────────────────────────────────────────
+# ── COVID domain adapter ──────────────────────────────────────────────────────
 
 def _convert_unit_number(number_text: str, unit: str) -> int:
     value = float(number_text)
@@ -828,7 +820,7 @@ def _extract_covid_daily_country_records(
 
 
 def _extract_covid_country_record(target_table, task_spec: TaskSpec, evidence_pack: EvidencePack) -> list[StructuredRecord]:
-    """COVID 国家级记录提取（legacy 兼容回退，仅在 schema 完全匹配时调用）。"""
+    """Extract country-level COVID records when the target schema matches exactly."""
     field_names = {field.field_name for field in target_table.schema}
     if not COVID_COUNTRY_FIELDS.issubset(field_names):
         return []
@@ -1133,10 +1125,10 @@ def _extract_nearby_number(text: str, field_name: str) -> object | None:
 def _extract_records_from_paragraph_evidence(target_table, task_spec: TaskSpec, evidence_pack: EvidencePack) -> list[StructuredRecord]:
     """通用段落提取：KV 模式匹配 + 近邻数字提取，对任意领域数据均有效。
 
-    若通用提取无结果且 schema 匹配 COVID 特征，回退到 _extract_covid_country_record
+    A matching COVID schema is handled by the domain adapter before generic extraction.
     以保持已有测试的向后兼容性。
     """
-    # COVID 优先路径：schema 精确匹配时使用领域专用提取，保证已有测试不退化
+    # Use the domain adapter only for an exact schema match.
     field_names = {f.field_name for f in target_table.schema}
     if COVID_COUNTRY_FIELDS.issubset(field_names):
         return _extract_covid_country_record(target_table, task_spec, evidence_pack)
@@ -1203,12 +1195,8 @@ def _extract_records_from_paragraph_evidence(target_table, task_spec: TaskSpec, 
     return []
 
 
-class DefaultExtractor:
-    """Build records from row evidence and paragraph evidence.
-
-    .. deprecated::
-        This is a legacy fallback. Prefer ``build_rule_candidates()`` + ``merge_candidates()``.
-    """
+class EvidenceFallbackExtractor:
+    """Build records directly when the primary candidate pipeline yields no records."""
 
     def extract(
         self,
@@ -1216,12 +1204,6 @@ class DefaultExtractor:
         template_spec: TemplateSpec,
         evidence_pack: EvidencePack,
     ) -> list[StructuredRecord]:
-        warnings.warn(
-            "DefaultExtractor.extract() is a legacy fallback path. "
-            "The primary extraction path uses build_rule_candidates() and merge_candidates().",
-            DeprecationWarning,
-            stacklevel=2,
-        )
         all_records: list[StructuredRecord] = []
         for target_table in template_spec.target_tables:
             row_records = _extract_records_from_row_evidence(target_table, task_spec, evidence_pack)

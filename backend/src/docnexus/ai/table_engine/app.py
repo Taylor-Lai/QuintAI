@@ -19,7 +19,7 @@ from docnexus.ai.table_engine.compute import PythonComputeEngine
 from docnexus.ai.table_engine.config import AppConfig
 from docnexus.ai.table_engine.core.orchestrator import MultiAgentOrchestrator, SequentialOrchestrator
 from docnexus.ai.table_engine.core.runtime import GraphRuntime, LangGraphRuntime
-from docnexus.ai.table_engine.extractors import DefaultExtractor
+from docnexus.ai.table_engine.extractors import EvidenceFallbackExtractor
 from docnexus.ai.table_engine.llm import build_llm_client
 from docnexus.ai.table_engine.parsers import DoclingSourceParser, DocxParser, TextParser, XlsxParser
 from docnexus.ai.table_engine.planners import DefaultTaskPlanner
@@ -54,7 +54,7 @@ def build_registry(config: AppConfig | None = None) -> ComponentRegistry:
     registry.register_retriever("rule", RuleRetriever())
     registry.register_rag_backend("default", DefaultRagBackend())
     registry.register_rag_backend("hybrid", HybridRagBackend())
-    registry.register_extractor("default", DefaultExtractor())
+    registry.register_extractor("default", EvidenceFallbackExtractor())
     registry.register_compute_engine("python", PythonComputeEngine())
     registry.register_writer("xlsx", XlsxWriter())
     registry.register_writer("docx", DocxTableWriter())

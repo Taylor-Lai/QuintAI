@@ -8,13 +8,8 @@ const UploadView = () => import('../views/UploadView.vue')
 const ProfileView = () => import('../views/ProfileView.vue')
 const TemplateLibraryView = () => import('../views/TemplateLibraryView.vue')
 const EditorView = () => import('../views/EditorView.vue')
-const MyAssetsView = () => import('../views/MyAssetsView.vue')
 const AdminView = () => import('../views/AdminView.vue')
-const FeedbackView = () => import('../views/FeedbackView.vue')
 const GuideView = () => import('../views/GuideView.vue')
-const AdminFeedbackView = () => import('../views/AdminFeedbackView.vue')
-const AdminDashboardView = () => import('../views/AdminDashboardView.vue')
-const AdminSettingsView = () => import('../views/AdminSettingsView.vue')
 
 const routes = [
   {
@@ -59,16 +54,6 @@ const routes = [
       requiresAuth: true
     }
   },
-  {
-    path: '/my-assets',
-    name: 'myAssets',
-    component: MyAssetsView,
-    meta: {
-      title: '我的资产',
-      requiresAuth: true
-    }
-  },
-
   /* 管理员后台相关页面 */
   {
     path: '/admin',
@@ -80,47 +65,11 @@ const routes = [
     }
   },
   {
-    path: '/admin/feedback',
-    name: 'adminFeedback',
-    component: AdminFeedbackView,
-    meta: {
-      title: '问题反馈管理',
-      requiresAuth: true
-    }
-  },
-  {
-    path: '/admin/dashboard',
-    name: 'adminDashboard',
-    component: AdminDashboardView,
-    meta: {
-      title: '数据总览',
-      requiresAuth: true
-    }
-  },
-  {
-    path: '/admin/settings',
-    name: 'adminSettings',
-    component: AdminSettingsView,
-    meta: {
-      title: '系统设置',
-      requiresAuth: true
-    }
-  },
-
-  {
     path: '/guide',
     name: 'guide',
     component: GuideView,
     meta: {
       title: '上手指南'
-    }
-  },
-  {
-    path: '/feedback',
-    name: 'feedback',
-    component: FeedbackView,
-    meta: {
-      title: '问题反馈'
     }
   },
   {

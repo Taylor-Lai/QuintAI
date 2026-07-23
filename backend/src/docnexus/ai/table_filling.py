@@ -31,10 +31,10 @@ logger = logging.getLogger(__name__)
 
 def _schema_classes():
     try:
-        from docnexus.ai.contracts import Mod3_FusionOutput
+        from docnexus.ai.contracts import TableFillingOutput
     except ImportError:  # pragma: no cover - local package fallback
-        from .contracts import Mod3_FusionOutput
-    return Mod3_FusionOutput
+        from .contracts import TableFillingOutput
+    return TableFillingOutput
 
 
 def _write_fill_run_report(work_dir: Path, task_id: str, result) -> Path:
@@ -125,7 +125,7 @@ def handle_table_filling(
     input_data,
     progress_callback: Callable[[str, str, str], None] | None = None,
 ):
-    Mod3_FusionOutput = _schema_classes()
+    output_schema = _schema_classes()
     work_dir = Path(input_data.workspace_dir)
     user_request_content = input_data.user_request or "请根据源文档中的信息，自动填充模板表格。"
     (work_dir / "用户要求.txt").write_text(user_request_content, encoding="utf-8")
@@ -172,7 +172,7 @@ def handle_table_filling(
 
         warnings = list(result.fill_result.warnings)
         if result.verification_report.status == "fail":
-            return Mod3_FusionOutput(
+            return output_schema(
                 status="failed",
                 task_id=input_data.task_id,
                 error_msg=result.verification_report.summary,
@@ -182,7 +182,7 @@ def handle_table_filling(
             warnings.append(result.verification_report.summary)
         warnings.append(f"fill_run_report={report_path}")
 
-        return Mod3_FusionOutput(
+        return output_schema(
             status="success",
             task_id=input_data.task_id,
             output_excel_path=str(result.fill_result.output_path),
@@ -193,7 +193,7 @@ def handle_table_filling(
         logger.exception("Table-filling pipeline failed for task %s", input_data.task_id)
         if progress_callback:
             progress_callback(input_data.task_id, "failed", "Table filling pipeline failed.")
-        return Mod3_FusionOutput(
+        return output_schema(
             status="failed",
             task_id=input_data.task_id,
             error_msg="表格填写流程执行失败，请查看服务端日志。",

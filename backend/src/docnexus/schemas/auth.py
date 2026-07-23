@@ -24,6 +24,13 @@ class LoginRequest(BaseModel):
     email: EmailStr
     password: str = Field(min_length=1, max_length=128)
 
+    @field_validator("password")
+    @classmethod
+    def password_must_fit_bcrypt(cls, value: str) -> str:
+        if len(value.encode("utf-8")) > 72:
+            raise ValueError("密码的 UTF-8 编码不能超过 72 字节")
+        return value
+
 
 class Token(BaseModel):
     access_token: str

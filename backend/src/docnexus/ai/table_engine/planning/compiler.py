@@ -93,7 +93,7 @@ def _operation_from_dict(raw: dict[str, object], index: int, target_fields: list
     )
 
 
-def _constraints_from_legacy_result(
+def _compile_constraints(
     raw_constraints: object,
     *,
     task_id: str,
@@ -161,13 +161,13 @@ def compile_task_understanding(task_spec: TaskSpec, result: dict[str, object] | 
                 if operation:
                     operations.append(operation)
 
-    llm_constraints, legacy_operations = _constraints_from_legacy_result(
+    llm_constraints, constraint_operations = _compile_constraints(
         result.get("constraints"),
         task_id=task_spec.task_id,
         target_fields=task_spec.target_fields,
     )
     if not operations:
-        operations = legacy_operations
+        operations = constraint_operations
 
     aggregate_metrics: list[dict[str, object]] = []
     for operation in operations:

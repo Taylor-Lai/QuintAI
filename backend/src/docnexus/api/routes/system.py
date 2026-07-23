@@ -1,22 +1,14 @@
-"""System and basic upload HTTP endpoints."""
+"""System health and static application endpoints."""
 
 import logging
 
 import redis
-from fastapi import (
-    APIRouter,
-    Depends,
-    File,
-    HTTPException,
-    UploadFile,
-)
+from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 from sqlalchemy import text
 
-from docnexus.api.dependencies import get_current_user
 from docnexus.core.settings import get_settings
-from docnexus.db import User, engine
-from docnexus.services.document_parser import DocumentParser
+from docnexus.db import engine
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -63,30 +55,3 @@ async def readiness():
     if "failed" in checks.values():
         raise HTTPException(status_code=503, detail={"status": "not_ready", "checks": checks})
     return {"status": "ready", "checks": checks}
-
-
-@router.post("/api/upload")
-async def upload_document(
-    file: UploadFile = File(...),
-    _user: User = Depends(get_current_user),
-):
-    """仅上传并解析（不提取）"""
-    try:
-        result = await DocumentParser.parse_file(file)
-        return {
-            "status": "success",
-            "data": {
-                "filename": result["filename"],
-                "file_type": result["file_type"],
-                "char_count": result["char_count"],
-                "preview": (
-                    result["content"][:500] + "..."
-                    if len(result["content"]) > 500
-                    else result["content"]
-                ),
-            },
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(500, f"上传失败：{str(e)}")

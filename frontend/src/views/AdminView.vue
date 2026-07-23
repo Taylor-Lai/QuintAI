@@ -23,32 +23,6 @@
             <span v-if="!sidebarCollapsed" class="menu-text">用户管理</span>
           </div>
 
-          <div
-            class="menu-item"
-            :class="{ active: route.path === '/admin/feedback' }"
-            @click="goPage('/admin/feedback')"
-          >
-            <span class="menu-icon">📝</span>
-            <span v-if="!sidebarCollapsed" class="menu-text">问题反馈管理</span>
-          </div>
-
-          <div
-            class="menu-item"
-            :class="{ active: route.path === '/admin/dashboard' }"
-            @click="goPage('/admin/dashboard')"
-          >
-            <span class="menu-icon">📊</span>
-            <span v-if="!sidebarCollapsed" class="menu-text">数据总览</span>
-          </div>
-
-          <div
-            class="menu-item"
-            :class="{ active: route.path === '/admin/settings' }"
-            @click="goPage('/admin/settings')"
-          >
-            <span class="menu-icon">⚙️</span>
-            <span v-if="!sidebarCollapsed" class="menu-text">系统设置</span>
-          </div>
         </div>
       </aside>
 
