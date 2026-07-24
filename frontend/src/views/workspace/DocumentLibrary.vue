@@ -22,7 +22,7 @@
           <div class="tag-cell"><span class="category">{{ item.category }}</span><small v-if="item.tags?.length">{{ item.tags.join('、') }}</small></div>
           <div><span class="status" :class="item.status">{{ statusText[item.status] || item.status }}</span></div>
           <div class="date-cell">{{ formatDate(item.created_at) }}</div>
-          <div class="actions"><button v-if="canProcess(item) && item.status !== 'archived'" @click="openRunner(item)">运行流程</button><button @click="download(item)">下载</button><button v-if="item.status !== 'archived'" @click="archive(item)">归档</button><button class="danger" @click="remove(item)">删除</button></div>
+          <div class="actions"><button v-if="canProcess(item) && item.status !== 'archived'" @click="openRunner(item)">运行流程</button><button @click="snapshot(item)">保存版本</button><button @click="download(item)">下载</button><button v-if="item.status !== 'archived'" @click="archive(item)">归档</button><button class="danger" @click="remove(item)">删除</button></div>
         </div>
       </div>
     </section>
@@ -53,6 +53,7 @@
 <script setup>
 import { onMounted, reactive, ref } from 'vue'
 import { deleteDocument, downloadDocument, getDocuments, getWorkflows, runWorkflow, updateDocument, uploadDocuments } from '../../api/workspace'
+import { createDocumentVersion } from '../../api/enterprise'
 
 const documents=ref([]), total=ref(0), loading=ref(true), showUploader=ref(false), uploading=ref(false), uploadFiles=ref([])
 const showRunner=ref(false), running=ref(false), activeWorkflows=ref([]), selectedDocument=ref(null), selectedWorkflowId=ref('')
@@ -63,6 +64,7 @@ const loadDocuments=async()=>{loading.value=true;try{const data=await getDocumen
 const selectFiles=(event)=>{uploadFiles.value=Array.from(event.target.files||[]).slice(0,10)}
 const submitUpload=async()=>{if(!uploadFiles.value.length)return;uploading.value=true;try{const body=new FormData();uploadFiles.value.forEach(file=>body.append('files',file));body.append('category',uploadForm.category);body.append('tags',uploadForm.tags);await uploadDocuments(body);showUploader.value=false;uploadFiles.value=[];await loadDocuments()}catch(e){alert(e.message)}finally{uploading.value=false}}
 const archive=async(item)=>{await updateDocument(item.id,{status:'archived'});await loadDocuments()}
+const snapshot=async(item)=>{const note=prompt('请输入本次版本说明（可留空）','人工保存版本');if(note===null)return;try{const result=await createDocumentVersion(item.id,note);alert(`已保存为 v${result.version}`)}catch(e){alert(e.message)}}
 const remove=async(item)=>{if(!confirm(`确定删除“${item.filename}”吗？删除后无法恢复。`))return;try{await deleteDocument(item.id);await loadDocuments()}catch(e){alert(e.message)}}
 const download=async(item)=>{try{const response=await downloadDocument(item.id);const url=URL.createObjectURL(response.data);const link=document.createElement('a');link.href=url;link.download=item.filename;link.click();URL.revokeObjectURL(url)}catch(e){alert(e.message)}}
 const canProcess=(item)=>['docx','xlsx','txt','md'].includes(item.file_type)

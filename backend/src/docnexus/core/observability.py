@@ -6,6 +6,7 @@ import json
 import logging
 import time
 import uuid
+from collections import defaultdict
 from contextvars import ContextVar
 from datetime import datetime, timezone
 
@@ -15,6 +16,8 @@ from starlette.responses import Response
 
 request_id_context: ContextVar[str] = ContextVar("request_id", default="-")
 logger = logging.getLogger("docnexus.http")
+http_requests: dict[tuple[str, str, int], int] = defaultdict(int)
+http_duration_seconds: dict[tuple[str, str], float] = defaultdict(float)
 
 
 class JsonFormatter(logging.Formatter):
@@ -49,6 +52,10 @@ class OperationalMiddleware(BaseHTTPMiddleware):
         try:
             response = await call_next(request)
             duration_ms = round((time.perf_counter() - started) * 1000, 2)
+            route = request.scope.get("route")
+            route_path = getattr(route, "path", request.url.path)
+            http_requests[(request.method, route_path, response.status_code)] += 1
+            http_duration_seconds[(request.method, route_path)] += duration_ms / 1000
             logger.info("%s %s %s %.2fms", request.method, request.url.path, response.status_code, duration_ms)
             response.headers["X-Request-ID"] = request_id
             response.headers["X-Content-Type-Options"] = "nosniff"
@@ -57,3 +64,21 @@ class OperationalMiddleware(BaseHTTPMiddleware):
             return response
         finally:
             request_id_context.reset(token)
+
+
+def render_prometheus_metrics() -> str:
+    lines = [
+        "# HELP quintai_http_requests_total Total HTTP requests.",
+        "# TYPE quintai_http_requests_total counter",
+    ]
+    for (method, path, status_code), count in sorted(http_requests.items()):
+        lines.append(f'quintai_http_requests_total{{method="{method}",path="{path}",status="{status_code}"}} {count}')
+    lines.extend(
+        [
+            "# HELP quintai_http_request_duration_seconds_sum Cumulative HTTP request duration.",
+            "# TYPE quintai_http_request_duration_seconds_sum counter",
+        ]
+    )
+    for (method, path), duration in sorted(http_duration_seconds.items()):
+        lines.append(f'quintai_http_request_duration_seconds_sum{{method="{method}",path="{path}"}} {duration:.6f}')
+    return "\n".join(lines) + "\n"

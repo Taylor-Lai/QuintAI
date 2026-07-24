@@ -12,6 +12,7 @@ from docnexus.core.settings import get_settings
 from docnexus.db import DocumentRecord, User, get_db
 from docnexus.repositories.extractions import ExtractionRepository
 from docnexus.repositories.tasks import TaskRepository
+from docnexus.services.enterprise import audit, ensure_context
 from docnexus.services.upload_security import save_upload_safely
 
 router = APIRouter(tags=["信息提取"])
@@ -24,6 +25,7 @@ def search_extractions(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    ensure_context(db, user)
     return {"items": ExtractionRepository.search_extractions(db, keyword, user.id)}
 
 
@@ -59,20 +61,38 @@ async def submit_extraction(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    context = ensure_context(db, user)
+    context.require("member")
     field_list = list(dict.fromkeys(value.strip() for value in fields.replace("，", ",").split(",") if value.strip()))
     if not field_list or len(field_list) > 100:
         raise HTTPException(400, "字段数量必须在 1 到 100 之间")
     task = TaskRepository.create(db, user.id, "document_extract", {})
+    task.organization_id = context.organization.id
     workspace = settings.data_dir / "tasks" / task.id
     try:
         path, size = await save_upload_safely(file, workspace / "input", {".docx", ".xlsx", ".txt", ".md"})
         document = DocumentRecord(
-            id=uuid.uuid4().hex, user_id=user.id, filename=path.name,
-            file_type=path.suffix.lstrip(".").lower(), size_bytes=size, storage_path=str(path),
-            source="extraction", category="信息提取", status="processing", tags=["智能提取"],
+            id=uuid.uuid4().hex,
+            user_id=user.id,
+            organization_id=context.organization.id,
+            filename=path.name,
+            file_type=path.suffix.lstrip(".").lower(),
+            size_bytes=size,
+            storage_path=str(path),
+            source="extraction",
+            category="信息提取",
+            status="processing",
+            tags=["智能提取"],
         )
         db.add(document)
-        task.payload = {"file_path": str(path), "filename": path.name, "fields": field_list, "user_id": user.id, "document_id": document.id}
+        task.payload = {
+            "file_path": str(path),
+            "filename": path.name,
+            "fields": field_list,
+            "user_id": user.id,
+            "document_id": document.id,
+        }
+        audit(db, context, user, "document.extract.submit", "document", document.id, {"fields": field_list})
         db.commit()
         enqueue(task)
         return serialize_task(task)

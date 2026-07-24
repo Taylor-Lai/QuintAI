@@ -34,6 +34,7 @@ frontend/dist/
 *.sqlite3
 logs/
 reports/
+backups/
 data/
 .coverage
 uploads/

@@ -6,7 +6,7 @@ from typing import Any
 from sqlalchemy import String
 from sqlalchemy.orm import Session
 
-from docnexus.db import ExtractionRecord, ReviewRecord
+from docnexus.db import DocumentRecord, ExtractionRecord, ReviewRecord
 from docnexus.services.validation import build_review_fields, validate_fields
 
 logger = logging.getLogger(__name__)
@@ -31,10 +31,13 @@ class ExtractionRepository:
     ) -> ExtractionRecord:
         """保存提取记录"""
         record_id = uuid.uuid4().hex
+        document = db.query(DocumentRecord).filter_by(id=document_id).first() if document_id else None
+        organization_id = document.organization_id if document else None
 
         record = ExtractionRecord(
             id=record_id,
             user_id=user_id,
+            organization_id=organization_id,
             task_id=task_id,
             document_id=document_id,
             filename=filename,
@@ -50,8 +53,13 @@ class ExtractionRepository:
             db.add(record)
             fields = build_review_fields(extracted_data)
             review = ReviewRecord(
-                id=uuid.uuid4().hex, user_id=user_id, document_id=document_id,
-                extraction_id=record_id, title=f"复核：{filename}", fields=fields,
+                id=uuid.uuid4().hex,
+                user_id=user_id,
+                organization_id=organization_id,
+                document_id=document_id,
+                extraction_id=record_id,
+                title=f"复核：{filename}",
+                fields=fields,
                 validation_results=validate_fields(fields, validation_rules),
                 validation_rules=validation_rules or [],
                 priority="high" if any(float(item["confidence"]) < 0.65 for item in fields) else "normal",
@@ -76,9 +84,7 @@ class ExtractionRepository:
         )
 
     @staticmethod
-    def list_extractions(
-        db: Session, user_id: str, limit: int = 20, offset: int = 0
-    ) -> list[ExtractionRecord]:
+    def list_extractions(db: Session, user_id: str, limit: int = 20, offset: int = 0) -> list[ExtractionRecord]:
         """获取提取记录列表"""
         return (
             db.query(ExtractionRecord)
@@ -123,7 +129,7 @@ class ExtractionRepository:
                     ExtractionRecord.content_preview.contains(keyword),
                     # 新增：在 extracted_data 的 JSON 中搜索
                     ExtractionRecord.extracted_data.cast(String).contains(keyword),
-                )
+                ),
             )
             .order_by(ExtractionRecord.created_at.desc())
             .limit(20)

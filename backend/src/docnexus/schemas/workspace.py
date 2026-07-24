@@ -26,6 +26,12 @@ class ReviewUpdate(BaseModel):
     action: Literal["save", "approve", "reject", "reopen"] = "save"
 
 
+class BulkReviewUpdate(BaseModel):
+    review_ids: list[str] = Field(min_length=1, max_length=100)
+    action: Literal["approve", "reject", "reopen"]
+    note: str | None = Field(default=None, max_length=2000)
+
+
 class WorkflowCreate(BaseModel):
     name: str = Field(min_length=2, max_length=120)
     description: str = Field(default="", max_length=1000)

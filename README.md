@@ -15,6 +15,11 @@ QuintAI 是一套文档智能处理系统，由 FastAPI 后端、Vue 3 前端和
 - 将多个 DOCX、XLSX、TXT 等来源的数据融合写入目标表格；
 - 提供用户认证、任务管理、历史记录和后台管理界面；
 - 支持规则、RAG、Agent Skill 与大语言模型协同处理。
+- 提供组织空间、分级角色权限、操作审计、协作评论和站内通知；
+- 提供文档及工作流版本、人工复核、批量审批、定时任务和失败重试；
+- 提供企业知识库、可追溯检索结果及由真实抽取数据生成的知识图谱；
+- 提供 API 密钥、Webhook 配置、套餐配额、质量分析和运行看板；
+- 提供 Prometheus 指标、可选监控容器、文档归档及 PostgreSQL 备份恢复脚本。
 
 ## 技术栈
 
@@ -107,6 +112,21 @@ Compose 会启动 API、Worker、PostgreSQL 和 Redis。API 通过 8000 端口�
 编译后的前端和接口；业务数据、队列状态和任务文件分别使用独立数据卷持久化。
 
 更多内容请查看[文档索引](docs/README.md)。
+
+启用可选 Prometheus 监控：
+
+```powershell
+docker compose --profile monitoring up -d
+```
+
+Prometheus 默认监听 `9090`，应用指标位于 `/metrics`。数据库灾备命令：
+
+```powershell
+./scripts/backup-database.ps1
+./scripts/restore-database.ps1 -BackupPath ./backups/quintai-时间.dump -ConfirmRestore
+```
+
+恢复命令会覆盖当前数据库，必须显式提供 `-ConfirmRestore`。在线支付、短信和企业消息平台属于外部商业服务，仓库提供安全的 API/Webhook 与手动套餐适配层，生产部署时再接入对应供应商凭据。
 
 ## 开源许可证
 

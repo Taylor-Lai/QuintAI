@@ -30,7 +30,8 @@ const navigation = [
   { to: '/workspace', label: '工作台概览', icon: '◫' },
   { to: '/workspace/documents', label: '文档库', icon: '▤' },
   { to: '/workspace/reviews', label: '人工复核', icon: '✓' },
-  { to: '/workspace/workflows', label: '工作流', icon: '⌘' }
+  { to: '/workspace/workflows', label: '工作流', icon: '⌘' },
+  { to: '/workspace/enterprise', label: '企业控制台', icon: '企' }
 ]
 </script>
 

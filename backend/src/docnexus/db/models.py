@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import JSON, BigInteger, ForeignKey, String, Text
+from sqlalchemy import JSON, BigInteger, ForeignKey, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from docnexus.db.session import Base
@@ -34,6 +34,7 @@ class User(Base):
     remark: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
+    active_organization_id: Mapped[str | None] = mapped_column(String(32), index=True)
 
     extractions: Mapped[list[ExtractionRecord]] = relationship(back_populates="user", cascade="all, delete-orphan")
     tasks: Mapped[list[TaskRecord]] = relationship(back_populates="user", cascade="all, delete-orphan")
@@ -48,8 +49,15 @@ class ExtractionRecord(Base):
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True)
     user_id: Mapped[str] = mapped_column(String(32), ForeignKey("users.id", ondelete="CASCADE"), index=True)
-    task_id: Mapped[str | None] = mapped_column(String(32), ForeignKey("task_records.id", ondelete="SET NULL"), index=True)
-    document_id: Mapped[str | None] = mapped_column(String(32), ForeignKey("document_records.id", ondelete="SET NULL"), index=True)
+    organization_id: Mapped[str | None] = mapped_column(
+        String(32), ForeignKey("organizations.id", ondelete="CASCADE"), index=True
+    )
+    task_id: Mapped[str | None] = mapped_column(
+        String(32), ForeignKey("task_records.id", ondelete="SET NULL"), index=True
+    )
+    document_id: Mapped[str | None] = mapped_column(
+        String(32), ForeignKey("document_records.id", ondelete="SET NULL"), index=True
+    )
     filename: Mapped[str] = mapped_column(String(255), index=True)
     file_type: Mapped[str] = mapped_column(String(20))
     fields_requested: Mapped[list[str]] = mapped_column(JSON, default=list)
@@ -70,6 +78,9 @@ class TaskRecord(Base):
     id: Mapped[str] = mapped_column(String(32), primary_key=True)
     celery_task_id: Mapped[str] = mapped_column(String(36), unique=True, index=True)
     user_id: Mapped[str] = mapped_column(String(32), ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    organization_id: Mapped[str | None] = mapped_column(
+        String(32), ForeignKey("organizations.id", ondelete="CASCADE"), index=True
+    )
     kind: Mapped[str] = mapped_column(String(30), index=True)
     status: Mapped[str] = mapped_column(String(20), default="queued", index=True)
     progress: Mapped[int] = mapped_column(default=0)
@@ -98,6 +109,9 @@ class DocumentRecord(Base):
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True)
     user_id: Mapped[str] = mapped_column(String(32), ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    organization_id: Mapped[str | None] = mapped_column(
+        String(32), ForeignKey("organizations.id", ondelete="CASCADE"), index=True
+    )
     filename: Mapped[str] = mapped_column(String(255), index=True)
     file_type: Mapped[str] = mapped_column(String(30), index=True)
     size_bytes: Mapped[int] = mapped_column(BigInteger, default=0)
@@ -123,8 +137,15 @@ class ReviewRecord(Base):
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True)
     user_id: Mapped[str] = mapped_column(String(32), ForeignKey("users.id", ondelete="CASCADE"), index=True)
-    document_id: Mapped[str | None] = mapped_column(String(32), ForeignKey("document_records.id", ondelete="CASCADE"), index=True)
-    extraction_id: Mapped[str | None] = mapped_column(String(32), ForeignKey("extraction_records.id", ondelete="SET NULL"), unique=True, index=True)
+    organization_id: Mapped[str | None] = mapped_column(
+        String(32), ForeignKey("organizations.id", ondelete="CASCADE"), index=True
+    )
+    document_id: Mapped[str | None] = mapped_column(
+        String(32), ForeignKey("document_records.id", ondelete="CASCADE"), index=True
+    )
+    extraction_id: Mapped[str | None] = mapped_column(
+        String(32), ForeignKey("extraction_records.id", ondelete="SET NULL"), unique=True, index=True
+    )
     title: Mapped[str] = mapped_column(String(255))
     status: Mapped[str] = mapped_column(String(30), default="pending", index=True)
     priority: Mapped[str] = mapped_column(String(20), default="normal", index=True)
@@ -148,6 +169,9 @@ class WorkflowDefinition(Base):
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True)
     user_id: Mapped[str] = mapped_column(String(32), ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    organization_id: Mapped[str | None] = mapped_column(
+        String(32), ForeignKey("organizations.id", ondelete="CASCADE"), index=True
+    )
     name: Mapped[str] = mapped_column(String(120), index=True)
     description: Mapped[str] = mapped_column(Text, default="")
     status: Mapped[str] = mapped_column(String(20), default="draft", index=True)
@@ -169,9 +193,18 @@ class WorkflowRun(Base):
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True)
     user_id: Mapped[str] = mapped_column(String(32), ForeignKey("users.id", ondelete="CASCADE"), index=True)
-    workflow_id: Mapped[str] = mapped_column(String(32), ForeignKey("workflow_definitions.id", ondelete="CASCADE"), index=True)
-    document_id: Mapped[str] = mapped_column(String(32), ForeignKey("document_records.id", ondelete="CASCADE"), index=True)
-    task_id: Mapped[str | None] = mapped_column(String(32), ForeignKey("task_records.id", ondelete="SET NULL"), index=True)
+    organization_id: Mapped[str | None] = mapped_column(
+        String(32), ForeignKey("organizations.id", ondelete="CASCADE"), index=True
+    )
+    workflow_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("workflow_definitions.id", ondelete="CASCADE"), index=True
+    )
+    document_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("document_records.id", ondelete="CASCADE"), index=True
+    )
+    task_id: Mapped[str | None] = mapped_column(
+        String(32), ForeignKey("task_records.id", ondelete="SET NULL"), index=True
+    )
     status: Mapped[str] = mapped_column(String(20), default="queued", index=True)
     current_node: Mapped[str] = mapped_column(String(80), default="文档接收")
     progress: Mapped[int] = mapped_column(default=0)
@@ -185,3 +218,228 @@ class WorkflowRun(Base):
     workflow: Mapped[WorkflowDefinition] = relationship(back_populates="runs")
     document: Mapped[DocumentRecord] = relationship()
     task: Mapped[TaskRecord | None] = relationship()
+
+
+class Organization(Base):
+    __tablename__ = "organizations"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    owner_id: Mapped[str] = mapped_column(String(32), ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(120))
+    slug: Mapped[str] = mapped_column(String(80), unique=True, index=True)
+    plan: Mapped[str] = mapped_column(String(30), default="starter", index=True)
+    status: Mapped[str] = mapped_column(String(20), default="active", index=True)
+    settings_data: Mapped[dict[str, Any]] = mapped_column("settings", JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
+
+
+class OrganizationMember(Base):
+    __tablename__ = "organization_members"
+    __table_args__ = (UniqueConstraint("organization_id", "user_id", name="uq_organization_member"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("organizations.id", ondelete="CASCADE"), index=True
+    )
+    user_id: Mapped[str] = mapped_column(String(32), ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    role: Mapped[str] = mapped_column(String(20), default="member", index=True)
+    status: Mapped[str] = mapped_column(String(20), default="active", index=True)
+    joined_at: Mapped[datetime] = mapped_column(default=utcnow)
+
+
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("organizations.id", ondelete="CASCADE"), index=True
+    )
+    user_id: Mapped[str | None] = mapped_column(String(32), ForeignKey("users.id", ondelete="SET NULL"), index=True)
+    action: Mapped[str] = mapped_column(String(80), index=True)
+    resource_type: Mapped[str] = mapped_column(String(40), index=True)
+    resource_id: Mapped[str | None] = mapped_column(String(64), index=True)
+    detail: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    ip_address: Mapped[str | None] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(default=utcnow, index=True)
+
+
+class DocumentVersion(Base):
+    __tablename__ = "document_versions"
+    __table_args__ = (UniqueConstraint("document_id", "version", name="uq_document_version"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    document_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("document_records.id", ondelete="CASCADE"), index=True
+    )
+    user_id: Mapped[str] = mapped_column(String(32), ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    version: Mapped[int]
+    storage_path: Mapped[str] = mapped_column(Text)
+    size_bytes: Mapped[int] = mapped_column(BigInteger, default=0)
+    checksum: Mapped[str] = mapped_column(String(64))
+    note: Mapped[str] = mapped_column(String(500), default="")
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+
+
+class WorkflowVersion(Base):
+    __tablename__ = "workflow_versions"
+    __table_args__ = (UniqueConstraint("workflow_id", "version", name="uq_workflow_version"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    workflow_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("workflow_definitions.id", ondelete="CASCADE"), index=True
+    )
+    user_id: Mapped[str] = mapped_column(String(32), ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    version: Mapped[int]
+    snapshot: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    note: Mapped[str] = mapped_column(String(500), default="")
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+
+
+class CollaborationComment(Base):
+    __tablename__ = "collaboration_comments"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("organizations.id", ondelete="CASCADE"), index=True
+    )
+    user_id: Mapped[str] = mapped_column(String(32), ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    resource_type: Mapped[str] = mapped_column(String(40), index=True)
+    resource_id: Mapped[str] = mapped_column(String(64), index=True)
+    content: Mapped[str] = mapped_column(Text)
+    mentions: Mapped[list[str]] = mapped_column(JSON, default=list)
+    resolved: Mapped[bool] = mapped_column(default=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
+
+
+class Notification(Base):
+    __tablename__ = "notifications"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(32), ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    kind: Mapped[str] = mapped_column(String(40), index=True)
+    title: Mapped[str] = mapped_column(String(160))
+    content: Mapped[str] = mapped_column(Text, default="")
+    link: Mapped[str | None] = mapped_column(String(500))
+    read_at: Mapped[datetime | None]
+    created_at: Mapped[datetime] = mapped_column(default=utcnow, index=True)
+
+
+class ApiCredential(Base):
+    __tablename__ = "api_credentials"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("organizations.id", ondelete="CASCADE"), index=True
+    )
+    user_id: Mapped[str] = mapped_column(String(32), ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(100))
+    prefix: Mapped[str] = mapped_column(String(16), index=True)
+    key_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    scopes: Mapped[list[str]] = mapped_column(JSON, default=list)
+    expires_at: Mapped[datetime | None]
+    last_used_at: Mapped[datetime | None]
+    revoked_at: Mapped[datetime | None]
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+
+
+class WebhookEndpoint(Base):
+    __tablename__ = "webhook_endpoints"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("organizations.id", ondelete="CASCADE"), index=True
+    )
+    name: Mapped[str] = mapped_column(String(100))
+    url: Mapped[str] = mapped_column(String(1000))
+    secret_hash: Mapped[str] = mapped_column(String(64))
+    secret_ciphertext: Mapped[str | None] = mapped_column(Text)
+    events: Mapped[list[str]] = mapped_column(JSON, default=list)
+    active: Mapped[bool] = mapped_column(default=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
+
+
+class KnowledgeCollection(Base):
+    __tablename__ = "knowledge_collections"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("organizations.id", ondelete="CASCADE"), index=True
+    )
+    owner_id: Mapped[str] = mapped_column(String(32), ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(120))
+    description: Mapped[str] = mapped_column(Text, default="")
+    retrieval_mode: Mapped[str] = mapped_column(String(30), default="hybrid")
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
+
+
+class KnowledgeItem(Base):
+    __tablename__ = "knowledge_items"
+    __table_args__ = (UniqueConstraint("collection_id", "document_id", name="uq_knowledge_item"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    collection_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("knowledge_collections.id", ondelete="CASCADE"), index=True
+    )
+    document_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("document_records.id", ondelete="CASCADE"), index=True
+    )
+    status: Mapped[str] = mapped_column(String(20), default="indexed", index=True)
+    chunk_count: Mapped[int] = mapped_column(default=0)
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+
+
+class AutomationSchedule(Base):
+    __tablename__ = "automation_schedules"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("organizations.id", ondelete="CASCADE"), index=True
+    )
+    workflow_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("workflow_definitions.id", ondelete="CASCADE"), index=True
+    )
+    user_id: Mapped[str] = mapped_column(String(32), ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(120))
+    cron_expression: Mapped[str] = mapped_column(String(80))
+    timezone: Mapped[str] = mapped_column(String(50), default="Asia/Shanghai")
+    status: Mapped[str] = mapped_column(String(20), default="active", index=True)
+    retry_limit: Mapped[int] = mapped_column(default=2)
+    last_run_at: Mapped[datetime | None]
+    next_run_at: Mapped[datetime | None]
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
+
+
+class Subscription(Base):
+    __tablename__ = "subscriptions"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("organizations.id", ondelete="CASCADE"), unique=True, index=True
+    )
+    plan: Mapped[str] = mapped_column(String(30), default="starter")
+    status: Mapped[str] = mapped_column(String(20), default="active")
+    limits: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    usage: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    period_start: Mapped[datetime] = mapped_column(default=utcnow)
+    period_end: Mapped[datetime | None]
+    updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
+
+
+class BackupRecord(Base):
+    __tablename__ = "backup_records"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("organizations.id", ondelete="CASCADE"), index=True
+    )
+    user_id: Mapped[str] = mapped_column(String(32), ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    status: Mapped[str] = mapped_column(String(20), default="completed", index=True)
+    storage_path: Mapped[str] = mapped_column(Text)
+    size_bytes: Mapped[int] = mapped_column(BigInteger, default=0)
+    checksum: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)

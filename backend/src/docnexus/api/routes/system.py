@@ -4,9 +4,10 @@ import logging
 
 import redis
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, PlainTextResponse
 from sqlalchemy import text
 
+from docnexus.core.observability import render_prometheus_metrics
 from docnexus.core.settings import get_settings
 from docnexus.db import engine
 
@@ -59,3 +60,8 @@ async def readiness():
     if "failed" in checks.values():
         raise HTTPException(status_code=503, detail={"status": "not_ready", "checks": checks})
     return {"status": "ready", "checks": checks}
+
+
+@router.get("/metrics", response_class=PlainTextResponse)
+async def metrics():
+    return render_prometheus_metrics()
