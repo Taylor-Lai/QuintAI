@@ -1,0 +1,17 @@
+import request from './request'
+
+export const getWorkspaceOverview = () => request.get('/workspace/overview')
+export const getDocuments = (params) => request.get('/workspace/documents', { params })
+export const uploadDocuments = (formData) => request.post('/workspace/documents', formData)
+export const updateDocument = (id, payload) => request.patch(`/workspace/documents/${id}`, payload)
+export const deleteDocument = (id) => request.delete(`/workspace/documents/${id}`)
+export const downloadDocument = (id) => request.get(`/workspace/documents/${id}/download`, { responseType: 'blob' })
+export const getReviews = (params) => request.get('/workspace/reviews', { params })
+export const getReview = (id) => request.get(`/workspace/reviews/${id}`)
+export const updateReview = (id, payload) => request.put(`/workspace/reviews/${id}`, payload)
+export const getWorkflows = () => request.get('/workspace/workflows')
+export const createWorkflow = (payload) => request.post('/workspace/workflows', payload)
+export const updateWorkflow = (id, payload) => request.put(`/workspace/workflows/${id}`, payload)
+export const deleteWorkflow = (id) => request.delete(`/workspace/workflows/${id}`)
+export const runWorkflow = (id, documentId) => request.post(`/workspace/workflows/${id}/runs`, { document_id: documentId })
+export const getWorkflowRuns = () => request.get('/workspace/workflow-runs')

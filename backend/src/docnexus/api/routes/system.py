@@ -14,11 +14,15 @@ logger = logging.getLogger(__name__)
 settings = get_settings()
 router = APIRouter()
 
+
 @router.get("/")
 async def root():
     index_path = settings.static_dir / "index.html"
     if index_path.is_file():
-        return FileResponse(index_path)
+        return FileResponse(
+            index_path,
+            headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+        )
     return {
         "message": "[START] 文档理解系统运行中",
         "version": "1.0.0",

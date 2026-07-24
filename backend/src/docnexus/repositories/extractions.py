@@ -6,7 +6,8 @@ from typing import Any
 from sqlalchemy import String
 from sqlalchemy.orm import Session
 
-from docnexus.db import ExtractionRecord
+from docnexus.db import ExtractionRecord, ReviewRecord
+from docnexus.services.validation import build_review_fields, validate_fields
 
 logger = logging.getLogger(__name__)
 
@@ -23,8 +24,10 @@ class ExtractionRepository:
         extracted_data: dict[str, Any],
         user_id: str,
         task_id: str | None = None,
+        document_id: str | None = None,
         content_preview: str = "",
         status: str = "success",
+        validation_rules: list[dict[str, Any]] | None = None,
     ) -> ExtractionRecord:
         """保存提取记录"""
         record_id = uuid.uuid4().hex
@@ -33,6 +36,7 @@ class ExtractionRepository:
             id=record_id,
             user_id=user_id,
             task_id=task_id,
+            document_id=document_id,
             filename=filename,
             file_type=file_type,
             fields_requested=fields_requested,
@@ -44,6 +48,15 @@ class ExtractionRepository:
 
         try:
             db.add(record)
+            fields = build_review_fields(extracted_data)
+            review = ReviewRecord(
+                id=uuid.uuid4().hex, user_id=user_id, document_id=document_id,
+                extraction_id=record_id, title=f"复核：{filename}", fields=fields,
+                validation_results=validate_fields(fields, validation_rules),
+                validation_rules=validation_rules or [],
+                priority="high" if any(float(item["confidence"]) < 0.65 for item in fields) else "normal",
+            )
+            db.add(review)
             db.commit()
             db.refresh(record)
             logger.info("Saved extraction record: %s", record_id)

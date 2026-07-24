@@ -32,6 +32,21 @@ EXPECTED_ROUTES = {
     ("PUT", "/admin/users/{user_id}/role"),
     ("DELETE", "/admin/users/{user_id}"),
     ("GET", "/admin/statistics"),
+    ("GET", "/workspace/overview"),
+    ("POST", "/workspace/documents"),
+    ("GET", "/workspace/documents"),
+    ("PATCH", "/workspace/documents/{document_id}"),
+    ("GET", "/workspace/documents/{document_id}/download"),
+    ("DELETE", "/workspace/documents/{document_id}"),
+    ("GET", "/workspace/reviews"),
+    ("GET", "/workspace/reviews/{review_id}"),
+    ("PUT", "/workspace/reviews/{review_id}"),
+    ("GET", "/workspace/workflows"),
+    ("POST", "/workspace/workflows"),
+    ("PUT", "/workspace/workflows/{workflow_id}"),
+    ("DELETE", "/workspace/workflows/{workflow_id}"),
+    ("POST", "/workspace/workflows/{workflow_id}/runs"),
+    ("GET", "/workspace/workflow-runs"),
 }
 
 

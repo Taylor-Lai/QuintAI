@@ -5,7 +5,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from docnexus.api.dependencies import get_current_user
-from docnexus.db import TaskRecord, User, get_db
+from docnexus.db import TaskRecord, User, WorkflowRun, get_db
 from docnexus.repositories.tasks import TaskRepository
 from docnexus.worker.celery_app import celery_app
 from docnexus.worker.tasks import process_task
@@ -68,6 +68,10 @@ def cancel_task(task_id: str, db: Session = Depends(get_db), user: User = Depend
     task.cancel_requested = True
     task.status = "cancelled"
     task.stage = "已取消"
+    workflow_run = db.query(WorkflowRun).filter(WorkflowRun.task_id == task.id).first()
+    if workflow_run is not None:
+        workflow_run.status = "cancelled"
+        workflow_run.current_node = "已取消"
     db.commit()
     celery_app.control.revoke(task.celery_task_id, terminate=True, signal="SIGTERM")
     return serialize_task(task)
@@ -88,6 +92,13 @@ def retry_task(task_id: str, db: Session = Depends(get_db), user: User = Depends
     task.cancel_requested = False
     task.error_code = None
     task.error_message = None
+    workflow_run = db.query(WorkflowRun).filter(WorkflowRun.task_id == task.id).first()
+    if workflow_run is not None:
+        workflow_run.status = "queued"
+        workflow_run.progress = 0
+        workflow_run.current_node = "等待重试"
+        workflow_run.error_message = None
+        workflow_run.completed_at = None
     db.commit()
     enqueue(task)
     return serialize_task(task)

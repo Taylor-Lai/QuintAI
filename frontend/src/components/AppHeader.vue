@@ -9,6 +9,14 @@
       </div>
 
       <nav class="nav">
+        <a
+          href="#"
+          class="nav-item"
+          :class="{ active: isWorkspacePage }"
+          @click.prevent="goWorkspace"
+        >
+          智能工作台
+        </a>
         <!-- 非首页时：只显示返回首页 -->
         <a
           v-if="!isHome"
@@ -183,6 +191,11 @@ const isTemplatePage = computed(() => route.path.startsWith('/template'))
 const isEditorPage = computed(() => route.path.startsWith('/editor'))
 const isProfilePage = computed(() => route.path === '/profile')
 const isGuidePage = computed(() => route.path === '/guide')
+const isWorkspacePage = computed(() => route.path.startsWith('/workspace'))
+
+const goWorkspace = () => {
+  router.push(userStore.isLogin ? '/workspace' : '/auth')
+}
 
 const goHome = () => {
   showMenu.value = false
@@ -320,7 +333,7 @@ const handleLogout = async () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 42px;
+  gap: 28px;
 }
 
 .nav-item {

@@ -85,6 +85,10 @@ class RealLlmStressMatrixTests(unittest.TestCase):
         Base.metadata.create_all(engine)
         celery_app.conf.update(task_always_eager=True, task_eager_propagates=True)
 
+    @classmethod
+    def tearDownClass(cls) -> None:
+        engine.dispose()
+
     def setUp(self) -> None:
         self.client = TestClient(app)
         email = f"stress-{uuid.uuid4().hex}@example.com"

@@ -53,7 +53,10 @@ def create_app() -> FastAPI:
             if requested_path.is_file():
                 return FileResponse(requested_path)
             if "." not in Path(full_path).name:
-                return FileResponse(settings.static_dir / "index.html")
+                return FileResponse(
+                    settings.static_dir / "index.html",
+                    headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+                )
             raise HTTPException(status_code=404, detail="Not found")
 
     return application

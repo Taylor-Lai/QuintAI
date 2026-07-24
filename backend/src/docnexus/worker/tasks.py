@@ -8,7 +8,7 @@ from celery.exceptions import SoftTimeLimitExceeded
 
 from docnexus.ai.contracts import DocumentOperationInput, InformationExtractionInput, TableFillingInput
 from docnexus.ai.workflows import handle_module_1_format, handle_module_2_extract, handle_module_3_fusion
-from docnexus.db import SessionLocal, TaskRecord
+from docnexus.db import SessionLocal, TaskRecord, WorkflowDefinition, WorkflowRun
 from docnexus.repositories.extractions import ExtractionRepository
 from docnexus.worker.celery_app import celery_app
 
@@ -22,6 +22,27 @@ def _update(task_id: str, **values) -> None:
             return
         for key, value in values.items():
             setattr(record, key, value)
+        workflow_run = db.query(WorkflowRun).filter(WorkflowRun.task_id == task_id).first()
+        if workflow_run is not None:
+            if "progress" in values:
+                workflow_run.progress = int(values["progress"])
+            if "stage" in values:
+                workflow_run.current_node = str(values["stage"])
+            if values.get("status") == "succeeded":
+                was_succeeded = workflow_run.status == "succeeded"
+                workflow_run.status = "succeeded"
+                workflow_run.completed_at = values.get("completed_at") or datetime.now()
+                if not was_succeeded:
+                    workflow = db.get(WorkflowDefinition, workflow_run.workflow_id)
+                    if workflow is not None:
+                        workflow.runs_count += 1
+            elif values.get("status") == "failed":
+                workflow_run.status = "failed"
+                workflow_run.error_message = str(values.get("error_message") or "任务执行失败")
+                workflow_run.completed_at = values.get("completed_at") or datetime.now()
+            elif values.get("status") in {"running", "retrying"}:
+                workflow_run.status = str(values["status"])
+                workflow_run.started_at = workflow_run.started_at or datetime.now()
         db.commit()
 
 
@@ -43,6 +64,12 @@ def _execute(task_id: str) -> None:
         record.stage = "正在解析文件"
         record.started_at = datetime.now()
         record.attempts += 1
+        workflow_run = db.query(WorkflowRun).filter(WorkflowRun.task_id == task_id).first()
+        if workflow_run is not None:
+            workflow_run.status = "running"
+            workflow_run.started_at = datetime.now()
+            workflow_run.progress = 10
+            workflow_run.current_node = "正在解析文件"
         db.commit()
 
     if kind == "document_edit":
@@ -61,12 +88,21 @@ def _execute(task_id: str) -> None:
                 db=db,
                 user_id=str(payload["user_id"]),
                 task_id=task_id,
+                document_id=payload.get("document_id"),
                 filename=str(payload["filename"]),
                 file_type=Path(str(payload["filename"])).suffix.lstrip("."),
                 fields_requested=fields,
                 extracted_data=extract_result.extracted_data,
                 content_preview=str(extract_result.extracted_data)[:1000],
+                validation_rules=payload.get("validation_rules") or [],
             )
+            if payload.get("document_id"):
+                from docnexus.db import DocumentRecord
+                document = db.get(DocumentRecord, str(payload["document_id"]))
+                if document:
+                    document.status = "needs_review"
+                    document.content_preview = str(extract_result.extracted_data)[:2000]
+                    db.commit()
         _update(task_id, result_data={"extracted_data": extract_result.extracted_data, "filename": payload["filename"]})
     elif kind == "table_fill":
         def progress_callback(_workflow_id: str, status: str, message: str) -> None:

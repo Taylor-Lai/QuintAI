@@ -1,6 +1,7 @@
 """Information extraction history and task submission."""
 
 import shutil
+import uuid
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from sqlalchemy.orm import Session
@@ -8,7 +9,7 @@ from sqlalchemy.orm import Session
 from docnexus.api.dependencies import get_current_user
 from docnexus.api.routes.tasks import enqueue, serialize_task
 from docnexus.core.settings import get_settings
-from docnexus.db import User, get_db
+from docnexus.db import DocumentRecord, User, get_db
 from docnexus.repositories.extractions import ExtractionRepository
 from docnexus.repositories.tasks import TaskRepository
 from docnexus.services.upload_security import save_upload_safely
@@ -64,8 +65,14 @@ async def submit_extraction(
     task = TaskRepository.create(db, user.id, "document_extract", {})
     workspace = settings.data_dir / "tasks" / task.id
     try:
-        path, _ = await save_upload_safely(file, workspace / "input", {".docx", ".xlsx", ".txt", ".md"})
-        task.payload = {"file_path": str(path), "filename": path.name, "fields": field_list, "user_id": user.id}
+        path, size = await save_upload_safely(file, workspace / "input", {".docx", ".xlsx", ".txt", ".md"})
+        document = DocumentRecord(
+            id=uuid.uuid4().hex, user_id=user.id, filename=path.name,
+            file_type=path.suffix.lstrip(".").lower(), size_bytes=size, storage_path=str(path),
+            source="extraction", category="信息提取", status="processing", tags=["智能提取"],
+        )
+        db.add(document)
+        task.payload = {"file_path": str(path), "filename": path.name, "fields": field_list, "user_id": user.id, "document_id": document.id}
         db.commit()
         enqueue(task)
         return serialize_task(task)

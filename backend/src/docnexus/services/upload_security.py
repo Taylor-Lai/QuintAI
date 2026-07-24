@@ -79,7 +79,9 @@ def validate_upload_content(filename: str, content: bytes, allowed_extensions: s
         raise HTTPException(status_code=400, detail="上传文件不能为空")
     if suffix in {".docx", ".xlsx"}:
         _validate_office_archive(content, suffix)
-    elif b"\x00" in content[:4096]:
+    elif suffix == ".pdf" and not content.startswith(b"%PDF-"):
+        raise HTTPException(status_code=400, detail="文件内容不是有效的 PDF 文档")
+    elif suffix in {".txt", ".md", ".csv"} and b"\x00" in content[:4096]:
         raise HTTPException(status_code=400, detail="文本文件包含非法二进制内容")
     return suffix
 

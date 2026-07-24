@@ -10,6 +10,11 @@ const TemplateLibraryView = () => import('../views/TemplateLibraryView.vue')
 const EditorView = () => import('../views/EditorView.vue')
 const AdminView = () => import('../views/AdminView.vue')
 const GuideView = () => import('../views/GuideView.vue')
+const WorkspaceLayout = () => import('../views/workspace/WorkspaceLayout.vue')
+const WorkspaceOverview = () => import('../views/workspace/WorkspaceOverview.vue')
+const DocumentLibrary = () => import('../views/workspace/DocumentLibrary.vue')
+const ReviewCenter = () => import('../views/workspace/ReviewCenter.vue')
+const WorkflowCenter = () => import('../views/workspace/WorkflowCenter.vue')
 
 const routes = [
   {
@@ -19,6 +24,17 @@ const routes = [
     meta: {
       title: '首页'
     }
+  },
+  {
+    path: '/workspace',
+    component: WorkspaceLayout,
+    meta: { requiresAuth: true },
+    children: [
+      { path: '', name: 'workspace', component: WorkspaceOverview, meta: { title: '智能工作台', requiresAuth: true } },
+      { path: 'documents', name: 'workspaceDocuments', component: DocumentLibrary, meta: { title: '文档库', requiresAuth: true } },
+      { path: 'reviews', name: 'workspaceReviews', component: ReviewCenter, meta: { title: '人工复核', requiresAuth: true } },
+      { path: 'workflows', name: 'workspaceWorkflows', component: WorkflowCenter, meta: { title: '工作流', requiresAuth: true } }
+    ]
   },
   {
     path: '/auth',
