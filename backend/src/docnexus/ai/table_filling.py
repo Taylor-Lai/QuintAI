@@ -99,6 +99,8 @@ def _write_fill_run_report(work_dir: Path, task_id: str, result) -> Path:
             1 for cell in result.fill_result.written_cells if cell.value not in (None, "", "未找到")
         ),
         "traceable_cell_count": sum(1 for cell in result.fill_result.written_cells if cell.evidence_ids),
+        "cell_traces": [cell.to_dict() for cell in result.fill_result.written_cells[:300]],
+        "evidence_items": list(debug.get("evidence_items") or [])[:200],
         "debug": {
             key: debug.get(key)
             for key in (
@@ -123,7 +125,7 @@ def _write_fill_run_report(work_dir: Path, task_id: str, result) -> Path:
 
 def handle_table_filling(
     input_data,
-    progress_callback: Callable[[str, str, str], None] | None = None,
+    progress_callback: Callable[[str, str, str, int, int], None] | None = None,
 ):
     output_schema = _schema_classes()
     work_dir = Path(input_data.workspace_dir)
@@ -132,7 +134,7 @@ def handle_table_filling(
 
     try:
         if progress_callback:
-            progress_callback(input_data.task_id, "processing", "Initializing multi-agent table filling pipeline.")
+            progress_callback("prepare", "running", "正在初始化多智能体任务", 0, 12)
 
         llm_provider = LLM_PROVIDER
         llm_model = ZHIPU_MODEL if llm_provider == "zhipu" else OPENAI_MODEL
@@ -159,16 +161,34 @@ def handle_table_filling(
 
         assets = discover_assets(work_dir)
         if progress_callback:
-            progress_callback(input_data.task_id, "processing", f"Discovered {len(assets)} file assets.")
+            progress_callback("prepare", "completed", f"已识别 {len(assets)} 个输入文件", 1, 12)
 
         orchestrator = build_orchestrator(config=config)
         if progress_callback:
-            progress_callback(input_data.task_id, "processing", "Running multi-agent LangGraph orchestration.")
+            progress_callback("orchestration", "completed", "多智能体执行图已就绪", 2, 12)
 
-        result = orchestrator.run(assets)
-        report_path = _write_fill_run_report(work_dir, input_data.task_id, result)
+        node_labels = {
+            "master": "理解任务并制定计划",
+            "table_agent": "分析目标表格结构",
+            "router_agent": "选择任务执行路线",
+            "retrieval_agent": "检索来源文档证据",
+            "rag_agent": "融合并重排相关证据",
+            "coder_agent": "计算字段并写入表格",
+            "verifier_agent": "校验结果完整性",
+            "repair_agent": "修复校验发现的问题",
+        }
+
+        def report_node(node_name: str, status: str, completed: int, _total: int) -> None:
+            if progress_callback:
+                progress_callback(node_name, status, node_labels.get(node_name, node_name), 2 + completed, 12)
+
+        result = orchestrator.run(assets, progress_callback=report_node)
         if progress_callback:
-            progress_callback(input_data.task_id, "success", "Table filling and verification completed.")
+            progress_callback("report", "running", "正在生成质量报告与证据清单", 10, 12)
+        report_path = _write_fill_run_report(work_dir, input_data.task_id, result)
+        report_data = json.loads(report_path.read_text(encoding="utf-8"))
+        if progress_callback:
+            progress_callback("report", "completed", "质量报告与证据清单已生成", 11, 12)
 
         warnings = list(result.fill_result.warnings)
         if result.verification_report.status == "fail":
@@ -187,12 +207,14 @@ def handle_table_filling(
             task_id=input_data.task_id,
             output_excel_path=str(result.fill_result.output_path),
             warnings=warnings,
+            report_path=str(report_path),
+            report_data=report_data,
         )
 
     except Exception:
         logger.exception("Table-filling pipeline failed for task %s", input_data.task_id)
         if progress_callback:
-            progress_callback(input_data.task_id, "failed", "Table filling pipeline failed.")
+            progress_callback("pipeline", "failed", "表格处理流程执行失败", 0, 12)
         return output_schema(
             status="failed",
             task_id=input_data.task_id,

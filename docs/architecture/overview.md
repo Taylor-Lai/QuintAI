@@ -6,14 +6,19 @@ flowchart LR
     API --> PG[("PostgreSQL")]
     API --> Redis[("Redis")]
     Redis --> Worker["Celery Worker"]
+    Scheduler["Celery Beat 调度器"] --> Redis
     Worker --> AI["文档与表格处理引擎"]
     Worker --> PG
+    Worker --> Webhook["签名 Webhook 投递"]
     AI --> LLM["模型供应商"]
     AI --> Files[("任务文件卷")]
+    API --> Knowledge["混合检索与知识图谱"]
+    Knowledge --> PG
 ```
 
 耗时 AI 操作不占用 HTTP 请求生命周期。API 完成鉴权和文件安全校验后创建任务，
-Worker 从 Redis 取任务执行，并将进度、结果、重试次数和错误写入 PostgreSQL。
+Worker 从 Redis 取任务执行，并将真实节点事件、进度、证据、质量结果、重试次数和错误写入 PostgreSQL。
+调度器按 Cron 计划扫描到期工作流，Webhook 投递记录包含签名、响应状态与失败原因。
 
 ## 后端分层
 
@@ -25,7 +30,7 @@ docnexus/
 |-- db/                      # SQLAlchemy 模型和会话
 |-- repositories/            # 用户隔离的数据访问
 |-- schemas/                 # HTTP 传输契约
-|-- services/                # 文件解析与上传安全
+|-- services/                # 文件解析、质量、知识检索、调度与回调
 |-- worker/                  # Celery 任务执行器
 `-- main.py                  # ASGI 应用工厂
 ```
@@ -35,6 +40,7 @@ docnexus/
 
 ## 任务状态
 
-任务状态按 `queued → running → succeeded/failed/cancelled` 变化。失败任务按配置自动
+任务状态按 `queued → running → succeeded/failed/cancelled` 变化。进度只在真实节点开始或
+完成时更新，不按等待时间模拟。失败任务按配置自动
 重试；用户也可对失败或取消的任务重新提交。Worker 使用软、硬超时和延迟确认，
 容器异常退出后消息会重新投递。

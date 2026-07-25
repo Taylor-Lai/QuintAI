@@ -35,8 +35,10 @@ from docnexus.schemas.workspace import (
     WorkflowUpdate,
 )
 from docnexus.services.enterprise import audit, ensure_context, subscription_for
+from docnexus.services.quality import extraction_quality, safely_repair_fields
 from docnexus.services.upload_security import save_upload_safely
 from docnexus.services.validation import validate_fields
+from docnexus.services.webhooks import publish_event
 
 router = APIRouter(prefix="/workspace", tags=["文档工作台"])
 settings = get_settings()
@@ -126,18 +128,20 @@ def _workflow_run_data(record: WorkflowRun) -> dict:
 def overview(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     context = ensure_context(db, user)
     org_id = context.organization.id
-    document_counts = dict(
-        db.query(DocumentRecord.status, func.count(DocumentRecord.id))
+    document_counts: dict[str, int] = {
+        str(item_status): int(count)
+        for item_status, count in db.query(DocumentRecord.status, func.count(DocumentRecord.id))
         .filter(DocumentRecord.organization_id == org_id)
         .group_by(DocumentRecord.status)
         .all()
-    )
-    review_counts = dict(
-        db.query(ReviewRecord.status, func.count(ReviewRecord.id))
+    }
+    review_counts: dict[str, int] = {
+        str(item_status): int(count)
+        for item_status, count in db.query(ReviewRecord.status, func.count(ReviewRecord.id))
         .filter(ReviewRecord.organization_id == org_id)
         .group_by(ReviewRecord.status)
         .all()
-    )
+    }
     active_tasks = (
         db.query(func.count(TaskRecord.id))
         .filter(TaskRecord.organization_id == org_id, TaskRecord.status.in_(["queued", "running", "retrying"]))
@@ -165,6 +169,95 @@ def overview(db: Session = Depends(get_db), user: User = Depends(get_current_use
         "active_tasks": active_tasks,
         "active_workflows": workflow_count,
         "recent_documents": [_document_data(item) for item in recent],
+    }
+
+
+@router.post("/demo", status_code=status.HTTP_202_ACCEPTED)
+def create_demo_run(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Create a traceable extraction demo and immediately enqueue it."""
+    context = ensure_context(db, user)
+    context.require("member")
+    demo_id = uuid.uuid4().hex
+    demo_dir = settings.data_dir / "documents" / user.id / "demo"
+    demo_dir.mkdir(parents=True, exist_ok=True)
+    demo_path = demo_dir / f"项目立项说明-{demo_id[:8]}.txt"
+    demo_content = """星河知识工程项目立项说明
+
+项目名称：星河知识工程
+项目负责人：林晓宇
+项目预算：人民币 680,000 元
+计划开始日期：2026-08-15
+计划完成日期：2026-12-20
+验收指标：完成 5 类文档自动处理，关键字段准确率不低于 92%，单份文档平均处理时长低于 30 秒。
+
+项目背景：团队希望把分散在 Word、Excel 和文本材料中的信息统一沉淀，并让每次处理都能追溯到原始依据。
+"""
+    demo_path.write_text(demo_content, encoding="utf-8")
+    document = DocumentRecord(
+        id=uuid.uuid4().hex,
+        user_id=user.id,
+        organization_id=context.organization.id,
+        filename=demo_path.name,
+        file_type="txt",
+        size_bytes=demo_path.stat().st_size,
+        storage_path=str(demo_path),
+        source="demo",
+        category="项目材料",
+        status="processing",
+        tags=["演示", "项目立项"],
+        content_preview=demo_content[:240],
+    )
+    workflow = WorkflowDefinition(
+        id=uuid.uuid4().hex,
+        user_id=user.id,
+        organization_id=context.organization.id,
+        name=f"项目立项信息提取演示-{demo_id[:6]}",
+        description="系统生成的可追溯信息提取演示，可在执行中心查看真实节点、证据与质量报告。",
+        status="active",
+        nodes=[
+            {"id": "receive", "type": "receive", "name": "接收项目材料"},
+            {
+                "id": "extract",
+                "type": "extract",
+                "name": "提取立项字段",
+                "fields": ["项目名称", "项目负责人", "项目预算", "计划开始日期", "计划完成日期", "验收指标"],
+            },
+            {"id": "validate", "type": "validate", "name": "规则与证据校验"},
+        ],
+        rules=[
+            {"field": "项目名称", "type": "required", "message": "项目名称不能为空"},
+            {"field": "项目预算", "type": "required", "message": "项目预算不能为空"},
+        ],
+    )
+    task = TaskRepository.create(db, user.id, "document_extract", {})
+    task.organization_id = context.organization.id
+    run = WorkflowRun(
+        id=uuid.uuid4().hex,
+        user_id=user.id,
+        organization_id=context.organization.id,
+        workflow_id=workflow.id,
+        document_id=document.id,
+        task_id=task.id,
+    )
+    task.payload = {
+        "file_path": str(demo_path),
+        "filename": demo_path.name,
+        "fields": workflow.nodes[1]["fields"],
+        "user_id": user.id,
+        "document_id": document.id,
+        "validation_rules": workflow.rules,
+        "workflow_run_id": run.id,
+    }
+    db.add_all([document, workflow, run])
+    audit(db, context, user, "demo.run", "workflow", workflow.id, {"document_id": document.id})
+    db.commit()
+    db.refresh(task)
+    enqueue(task)
+    return {
+        "task_id": task.id,
+        "workflow_id": workflow.id,
+        "document_id": document.id,
+        "message": "演示任务已创建，可在执行中心查看实时进度。",
     }
 
 
@@ -422,7 +515,35 @@ def update_review(
     audit(db, context, user, f"review.{payload.action}", "review", record.id)
     db.commit()
     db.refresh(record)
+    if payload.action == "approve":
+        publish_event(context.organization.id, "review.approved", {"review_id": record.id, "document_id": record.document_id})
     return _review_data(record)
+
+
+@router.post("/reviews/{review_id}/auto-fix")
+def auto_fix_review(
+    review_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    context = ensure_context(db, user)
+    context.require("reviewer")
+    record = (
+        db.query(ReviewRecord)
+        .filter(ReviewRecord.id == review_id, ReviewRecord.organization_id == context.organization.id)
+        .first()
+    )
+    if record is None:
+        raise HTTPException(404, "复核任务不存在")
+    repaired, changes = safely_repair_fields(record.fields or [])
+    record.fields = repaired
+    record.validation_results = validate_fields(repaired, record.validation_rules or [])
+    record.status = "in_review"
+    quality = extraction_quality(repaired, record.validation_results)
+    audit(db, context, user, "review.auto_fix", "review", record.id, {"changes": changes})
+    db.commit()
+    db.refresh(record)
+    return {**_review_data(record), "auto_fix": {"changes": changes, "quality": quality}}
 
 
 @router.get("/workflows")

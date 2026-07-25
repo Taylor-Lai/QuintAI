@@ -2,7 +2,7 @@
   <div class="overview-view">
     <header class="page-heading">
       <div><div class="eyebrow">QUINTAI WORKSPACE</div><h1>工作台概览</h1><p>集中管理文档、复核任务和自动化流程。</p></div>
-      <RouterLink to="/workspace/documents" class="primary-btn">＋ 导入文档</RouterLink>
+      <div class="hero-actions"><button class="demo-btn" :disabled="demoLoading" @click="runDemo">{{ demoLoading ? '正在创建…' : '▶ 一键运行演示' }}</button><RouterLink to="/workspace/documents" class="primary-btn">＋ 导入文档</RouterLink></div>
     </header>
 
     <div v-if="loading" class="state-card">正在加载工作台数据...</div>
@@ -51,10 +51,13 @@
 
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { getWorkspaceOverview } from '../../api/workspace'
+import { useRouter } from 'vue-router'
+import { createDemoRun, getWorkspaceOverview } from '../../api/workspace'
 
 const loading = ref(true)
+const demoLoading = ref(false)
 const overview = ref({})
+const router = useRouter()
 const statusText = { ready: '待处理', processing: '处理中', needs_review: '待复核', completed: '已完成', archived: '已归档' }
 const actions = [
   { icon: '⌁', title: '提取文档信息', desc: '将非结构化内容转换为字段', to: '/feature/doc-extract' },
@@ -72,6 +75,7 @@ const metrics = computed(() => [
   { label: '启用工作流', value: overview.value.active_workflows || 0, hint: '已发布的自动化流程', icon: '⌘' }
 ])
 const formatSize = (size = 0) => size < 1024 * 1024 ? `${Math.max(1, Math.round(size / 1024))} KB` : `${(size / 1024 / 1024).toFixed(1)} MB`
+const runDemo = async () => { try { demoLoading.value = true; const result = await createDemoRun(); await router.push({ path: '/workspace/executions', query: { task: result.task_id } }) } catch (error) { alert(error.message) } finally { demoLoading.value = false } }
 onMounted(async () => { try { overview.value = await getWorkspaceOverview() } catch (error) { console.error(error) } finally { loading.value = false } })
 </script>
 
@@ -81,6 +85,7 @@ onMounted(async () => { try { overview.value = await getWorkspaceOverview() } ca
 .eyebrow { font: 700 11px/1.2 system-ui,sans-serif; letter-spacing:1.8px; color:#b78a49; }
 h1 { margin:7px 0 5px; font-size:28px; color:#292929; } .page-heading p,.panel-head p { margin:0;color:#8e877e;font-size:14px; }
 .primary-btn { height:42px;padding:0 20px;border-radius:21px;background:#d5b076;color:white;display:flex;align-items:center;font-size:14px;box-shadow:0 7px 16px rgba(190,143,73,.18); }
+.hero-actions{display:flex;align-items:center;gap:10px}.demo-btn{height:42px;padding:0 19px;border-radius:21px;border:1px solid #d5b076;background:#fffaf1;color:#9e6e2e;cursor:pointer}.demo-btn:disabled{opacity:.65;cursor:wait}
 .metric-grid { display:grid;grid-template-columns:repeat(4,1fr);gap:16px; }
 .metric-card,.panel,.flow-panel,.state-card { background:#f8f8f8;border:1px solid #e5e2dd;border-radius:16px;box-shadow:0 8px 24px rgba(0,0,0,.035); }
 .metric-card { padding:21px;display:grid;grid-template-columns:42px 1fr;gap:12px;align-items:center; }

@@ -120,6 +120,30 @@ def test_compiler_normalizes_aggregate_aliases_and_impute_source_field() -> None
     assert plan.operations[1].params["aggregations"][0]["alias"] == "平均销售额"
 
 
+def test_compiler_enforces_request_sort_direction_and_limit_on_llm_plan() -> None:
+    task = TaskSpec(
+        "task",
+        "fill_table",
+        "template",
+        target_fields=["城市", "AQI"],
+        constraints=[
+            Constraint("sort", "user_request", "sort", "AQI", "desc", "AQI"),
+            Constraint("limit", "user_request", "limit", None, "top", 2),
+        ],
+    )
+    result = {
+        "operations": [
+            {"operation_id": "sort", "op": "sort", "params": {"by": ["AQI"]}},
+            {"operation_id": "limit", "op": "limit", "params": {"n": 5}},
+        ]
+    }
+
+    plan = compile_task_understanding(task, result)
+
+    assert plan.operations[0].params == {"field": "AQI", "order": "desc"}
+    assert plan.operations[1].params["n"] == 2
+
+
 def test_validator_rejects_duplicate_ids_unknown_dependencies_and_cycles() -> None:
     plan = TaskPlan(
         operations=[

@@ -16,5 +16,11 @@ celery_app.conf.update(
     task_soft_time_limit=settings.task_timeout_seconds,
     task_time_limit=settings.task_timeout_seconds + 30,
     result_expires=86400,
+    beat_schedule={
+        "scan-automation-schedules": {
+            "task": "docnexus.scan_schedules",
+            "schedule": 30.0,
+        }
+    },
 )
 celery_app.autodiscover_tasks(["docnexus.worker"])

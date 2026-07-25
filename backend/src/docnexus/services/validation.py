@@ -38,10 +38,12 @@ def build_review_fields(extracted_data: dict[str, Any]) -> list[dict[str, Any]]:
         fields.append({
             "name": str(name),
             "value": value,
+            "original_value": value,
             "confidence": max(0.0, min(confidence, 1.0)),
             "evidence": evidence,
             "source_page": source_page,
             "corrected": False,
+            "auto_fixed": False,
         })
     return fields
 
@@ -78,12 +80,14 @@ def validate_fields(fields: list[dict[str, Any]], rules: list[dict[str, Any]] | 
                 message = "规则中的正则表达式无效"
         elif rule_type == "min" and value not in (None, ""):
             try:
-                failed = float(value) < float(rule.get("value"))
+                limit = rule.get("value")
+                failed = limit is None or float(str(value)) < float(limit)
             except (TypeError, ValueError):
                 failed = True
         elif rule_type == "max" and value not in (None, ""):
             try:
-                failed = float(value) > float(rule.get("value"))
+                limit = rule.get("value")
+                failed = limit is None or float(str(value)) > float(limit)
             except (TypeError, ValueError):
                 failed = True
         if failed:

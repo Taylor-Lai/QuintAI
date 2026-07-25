@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from time import perf_counter
-from typing import TypedDict
+from typing import Callable, TypedDict
 from uuid import uuid4
 
 from docnexus.ai.table_engine.candidates import CandidateRecord
@@ -28,6 +28,9 @@ except ImportError:  # pragma: no cover - optional dependency path
 
 class GraphStatePayload(TypedDict):
     state: "AgentState"
+
+
+ProgressCallback = Callable[[str, str, int, int], None]
 
 
 @dataclass(slots=True)
@@ -172,9 +175,12 @@ class GraphRuntime:
     def __init__(self, nodes: list[tuple[str, object]]) -> None:
         self.nodes = nodes
 
-    def run(self, state: AgentState) -> AgentState:
+    def run(self, state: AgentState, progress_callback: ProgressCallback | None = None) -> AgentState:
         state.runtime_backend = self.backend_name
-        for node_name, node in self.nodes:
+        total = len(self.nodes)
+        for index, (node_name, node) in enumerate(self.nodes):
+            if progress_callback:
+                progress_callback(node_name, "running", index, total)
             started_at = perf_counter()
             state.add_log(node_name, "start")
             state = node.run(state)
@@ -182,6 +188,8 @@ class GraphRuntime:
             state.stage_metrics.append(
                 {"stage": node_name, "duration_ms": round((perf_counter() - started_at) * 1000, 2)}
             )
+            if progress_callback:
+                progress_callback(node_name, "completed", index + 1, total)
         return state
 
 
@@ -193,21 +201,30 @@ class LangGraphRuntime:
     def __init__(self, nodes: list[tuple[str, object]]) -> None:
         self.nodes = nodes
 
-    def _build_graph(self):
+    def _build_graph(self, progress_callback: ProgressCallback | None = None):
         if StateGraph is None or END is None:
             return None
         graph = StateGraph(GraphStatePayload)
-        for node_name, node in self.nodes:
-            graph.add_node(node_name, self._wrap_node(node_name, node))
+        for index, (node_name, node) in enumerate(self.nodes):
+            graph.add_node(node_name, self._wrap_node(node_name, node, index, len(self.nodes), progress_callback))
         graph.set_entry_point(self.nodes[0][0])
         for index, (node_name, _) in enumerate(self.nodes):
             next_name = END if index == len(self.nodes) - 1 else self.nodes[index + 1][0]
             graph.add_edge(node_name, next_name)
         return graph.compile()
 
-    def _wrap_node(self, node_name: str, node: object):
+    def _wrap_node(
+        self,
+        node_name: str,
+        node: object,
+        index: int,
+        total: int,
+        progress_callback: ProgressCallback | None,
+    ):
         def runner(payload: GraphStatePayload) -> GraphStatePayload:
             state = payload["state"]
+            if progress_callback:
+                progress_callback(node_name, "running", index, total)
             started_at = perf_counter()
             state.add_log(node_name, "start")
             state = node.run(state)
@@ -215,19 +232,21 @@ class LangGraphRuntime:
             state.stage_metrics.append(
                 {"stage": node_name, "duration_ms": round((perf_counter() - started_at) * 1000, 2)}
             )
+            if progress_callback:
+                progress_callback(node_name, "completed", index + 1, total)
             return {"state": state}
 
         return runner
 
-    def run(self, state: AgentState) -> AgentState:
-        graph = self._build_graph()
+    def run(self, state: AgentState, progress_callback: ProgressCallback | None = None) -> AgentState:
+        graph = self._build_graph(progress_callback)
         if graph is None:
             state.add_log(
                 "runtime",
                 "langgraph_unavailable",
                 {"fallback_backend": GraphRuntime.backend_name},
             )
-            return GraphRuntime(self.nodes).run(state)
+            return GraphRuntime(self.nodes).run(state, progress_callback)
 
         result = graph.invoke({"state": state})
         final_state = result["state"]

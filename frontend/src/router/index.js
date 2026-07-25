@@ -16,6 +16,8 @@ const DocumentLibrary = () => import('../views/workspace/DocumentLibrary.vue')
 const ReviewCenter = () => import('../views/workspace/ReviewCenter.vue')
 const WorkflowCenter = () => import('../views/workspace/WorkflowCenter.vue')
 const EnterpriseCenter = () => import('../views/workspace/EnterpriseCenter.vue')
+const ExecutionCenter = () => import('../views/workspace/ExecutionCenter.vue')
+const KnowledgeCenter = () => import('../views/workspace/KnowledgeCenter.vue')
 
 const routes = [
   {
@@ -35,6 +37,8 @@ const routes = [
       { path: 'documents', name: 'workspaceDocuments', component: DocumentLibrary, meta: { title: '文档库', requiresAuth: true } },
       { path: 'reviews', name: 'workspaceReviews', component: ReviewCenter, meta: { title: '人工复核', requiresAuth: true } },
       { path: 'workflows', name: 'workspaceWorkflows', component: WorkflowCenter, meta: { title: '工作流', requiresAuth: true } },
+      { path: 'executions', name: 'workspaceExecutions', component: ExecutionCenter, meta: { title: 'AI 执行驾驶舱', requiresAuth: true } },
+      { path: 'knowledge', name: 'workspaceKnowledge', component: KnowledgeCenter, meta: { title: '知识与证据中心', requiresAuth: true } },
       { path: 'enterprise', name: 'workspaceEnterprise', component: EnterpriseCenter, meta: { title: '企业控制台', requiresAuth: true } }
     ]
   },

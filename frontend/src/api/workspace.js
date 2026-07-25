@@ -1,6 +1,7 @@
 import request from './request'
 
 export const getWorkspaceOverview = () => request.get('/workspace/overview')
+export const createDemoRun = () => request.post('/workspace/demo')
 export const getDocuments = (params) => request.get('/workspace/documents', { params })
 export const uploadDocuments = (formData) => request.post('/workspace/documents', formData)
 export const updateDocument = (id, payload) => request.patch(`/workspace/documents/${id}`, payload)
@@ -9,6 +10,7 @@ export const downloadDocument = (id) => request.get(`/workspace/documents/${id}/
 export const getReviews = (params) => request.get('/workspace/reviews', { params })
 export const getReview = (id) => request.get(`/workspace/reviews/${id}`)
 export const updateReview = (id, payload) => request.put(`/workspace/reviews/${id}`, payload)
+export const autoFixReview = (id) => request.post(`/workspace/reviews/${id}/auto-fix`)
 export const getWorkflows = () => request.get('/workspace/workflows')
 export const createWorkflow = (payload) => request.post('/workspace/workflows', payload)
 export const updateWorkflow = (id, payload) => request.put(`/workspace/workflows/${id}`, payload)

@@ -53,3 +53,5 @@ class TableFillingOutput(BaseModel):
     output_excel_path: Optional[str] = Field(None, description="生成的目标文件路径（xlsx 或 docx）")
     warnings: List[str] = Field(default_factory=list, description="算法产生的警告信息")
     error_msg: Optional[str] = Field(None, description="报错信息")
+    report_path: Optional[str] = Field(None, description="本次运行的可追溯质量报告路径")
+    report_data: Dict[str, Any] = Field(default_factory=dict, description="可供任务驾驶舱展示的质量与证据摘要")

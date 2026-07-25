@@ -734,6 +734,8 @@ const resultObjectUrl = ref('')
 
 const progress = ref(0)
 const progressText = ref('正在准备任务...')
+const completedSteps = ref(0)
+const totalSteps = ref(1)
 
 const typeNameMap = {
   'doc-chat': '文档智能操作交互',
@@ -812,6 +814,8 @@ const clearInputElements = () => {
 const resetProgressState = () => {
   progress.value = 0
   progressText.value = '正在准备任务...'
+  completedSteps.value = 0
+  totalSteps.value = 1
 }
 
 const resetPageState = () => {
@@ -1032,6 +1036,8 @@ const waitForSubmittedTask = async (submission, fallbackFileName = '') => {
   const task = await waitForTask(submission.id, (current) => {
     progress.value = Math.max(0, Math.min(100, Number(current.progress) || 0))
     progressText.value = current.stage || '正在处理...'
+    completedSteps.value = Number(current.completed_steps) || 0
+    totalSteps.value = Math.max(1, Number(current.total_steps) || 1)
   })
   if (task.has_file) {
     return normalizeApiResponse(await downloadTaskApi(task.id), task.filename || fallbackFileName)
@@ -1046,10 +1052,7 @@ const getLoadingTitle = () => {
 }
 
 const getLoadingStageLabel = () => {
-  if (progress.value < 25) return '准备阶段'
-  if (progress.value < 50) return '解析阶段'
-  if (progress.value < 80) return '执行阶段'
-  return '整理阶段'
+  return `真实节点 ${completedSteps.value} / ${totalSteps.value}`
 }
 
 const loadActiveTemplate = () => {

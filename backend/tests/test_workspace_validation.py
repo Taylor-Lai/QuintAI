@@ -34,9 +34,11 @@ def test_review_fields_use_metadata_without_exposing_internal_field() -> None:
         {
             "name": "报告标题",
             "value": "行业报告",
+            "original_value": "行业报告",
             "confidence": 0.92,
             "evidence": "2026 年行业报告",
             "source_page": None,
             "corrected": False,
+            "auto_fixed": False,
         }
     ]

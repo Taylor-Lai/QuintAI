@@ -5,15 +5,18 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import os
 import secrets
+import time
 import uuid
 import zipfile
 from datetime import datetime, timedelta
 from pathlib import Path
 
+import redis
 from cryptography.fernet import Fernet
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from sqlalchemy import func
+from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
 from docnexus.ai.knowledge_graph.builder import KnowledgeGraphBuilder
@@ -28,6 +31,7 @@ from docnexus.db import (
     DocumentRecord,
     DocumentVersion,
     ExtractionRecord,
+    KnowledgeChunk,
     KnowledgeCollection,
     KnowledgeItem,
     Notification,
@@ -36,10 +40,12 @@ from docnexus.db import (
     ReviewRecord,
     TaskRecord,
     User,
+    WebhookDelivery,
     WebhookEndpoint,
     WorkflowDefinition,
     WorkflowRun,
     WorkflowVersion,
+    engine,
     get_db,
 )
 from docnexus.schemas.enterprise import (
@@ -55,6 +61,10 @@ from docnexus.schemas.enterprise import (
     WebhookCreate,
 )
 from docnexus.services.enterprise import PLAN_LIMITS, audit, ensure_context, subscription_for
+from docnexus.services.knowledge import hybrid_search, index_document
+from docnexus.services.scheduling import next_cron_time
+from docnexus.services.webhooks import publish_event
+from docnexus.worker.celery_app import celery_app
 
 router = APIRouter(prefix="/enterprise", tags=["企业平台"])
 settings = get_settings()
@@ -86,12 +96,13 @@ def dashboard(db: Session = Depends(get_db), user: User = Depends(get_current_us
     storage = (
         db.query(func.coalesce(func.sum(DocumentRecord.size_bytes), 0)).filter_by(organization_id=org_id).scalar() or 0
     )
-    run_counts = dict(
-        db.query(WorkflowRun.status, func.count(WorkflowRun.id))
+    run_counts: dict[str, int] = {
+        str(run_status): int(count)
+        for run_status, count in db.query(WorkflowRun.status, func.count(WorkflowRun.id))
         .filter_by(organization_id=org_id)
         .group_by(WorkflowRun.status)
         .all()
-    )
+    }
     return {
         "organization": {
             "id": org_id,
@@ -602,6 +613,48 @@ def delete_webhook(webhook_id: str, db: Session = Depends(get_db), user: User = 
     db.commit()
 
 
+@router.post("/webhooks/{webhook_id}/test", status_code=202)
+def test_webhook(webhook_id: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    context = ensure_context(db, user)
+    context.require("admin")
+    endpoint = db.query(WebhookEndpoint).filter_by(id=webhook_id, organization_id=context.organization.id).first()
+    if endpoint is None:
+        raise HTTPException(404, "Webhook 不存在")
+    event_name = (endpoint.events or ["webhook.test"])[0]
+    delivery_ids = publish_event(context.organization.id, event_name, {"message": "QuintAI Webhook 测试事件"})
+    return {"queued": len(delivery_ids), "delivery_ids": delivery_ids}
+
+
+@router.get("/webhook-deliveries")
+def webhook_deliveries(
+    limit: int = Query(30, ge=1, le=100),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    context = ensure_context(db, user)
+    context.require("admin")
+    rows = (
+        db.query(WebhookDelivery)
+        .filter_by(organization_id=context.organization.id)
+        .order_by(WebhookDelivery.created_at.desc())
+        .limit(limit)
+        .all()
+    )
+    return {"items": [
+        {
+            "id": row.id,
+            "event": row.event,
+            "status": row.status,
+            "attempts": row.attempts,
+            "response_status": row.response_status,
+            "error_message": row.error_message,
+            "created_at": row.created_at,
+            "delivered_at": row.delivered_at,
+        }
+        for row in rows
+    ]}
+
+
 @router.get("/knowledge")
 def list_knowledge(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     context = ensure_context(db, user)
@@ -659,7 +712,7 @@ def add_knowledge_document(
         raise HTTPException(404, "知识库或文档不存在")
     if db.query(KnowledgeItem).filter_by(collection_id=collection.id, document_id=document.id).first():
         raise HTTPException(409, "文档已在知识库中")
-    chunks = max(1, (len(document.content_preview or "") + 799) // 800)
+    chunks = index_document(db, collection.id, document)
     row = KnowledgeItem(id=uuid.uuid4().hex, collection_id=collection.id, document_id=document.id, chunk_count=chunks)
     db.add(row)
     audit(db, context, user, "knowledge.document.add", "knowledge", collection.id, {"document_id": document.id})
@@ -681,33 +734,40 @@ def search_knowledge(
     )
     if collection is None:
         raise HTTPException(404, "知识库不存在")
-    items = db.query(KnowledgeItem).filter_by(collection_id=collection.id, status="indexed").all()
-    results = []
-    normalized_query = query.lower()
-    for item in items:
-        document = db.query(DocumentRecord).filter_by(id=item.document_id).first()
-        if document is None:
-            continue
-        extraction = (
-            db.query(ExtractionRecord)
-            .filter_by(document_id=document.id)
-            .order_by(ExtractionRecord.created_at.desc())
-            .first()
-        )
-        extracted_text = json.dumps(extraction.extracted_data, ensure_ascii=False) if extraction else ""
-        searchable = f"{document.filename}\n{document.content_preview}\n{extracted_text}".lower()
-        score = searchable.count(normalized_query)
-        if score:
-            results.append(
-                {
-                    "document_id": document.id,
-                    "filename": document.filename,
-                    "score": score,
-                    "snippet": (document.content_preview or extracted_text)[:500],
-                }
-            )
-    results.sort(key=lambda row: row["score"], reverse=True)
-    return {"query": query, "mode": collection.retrieval_mode, "provider": "local_keyword", "items": results[:limit]}
+    results = hybrid_search(db, collection.id, query, collection.retrieval_mode, limit)
+    return {
+        "query": query,
+        "mode": collection.retrieval_mode,
+        "provider": "local_hybrid_vector",
+        "items": results,
+    }
+
+
+@router.get("/knowledge/{collection_id}/documents")
+def list_knowledge_documents(
+    collection_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    context = ensure_context(db, user)
+    collection = db.query(KnowledgeCollection).filter_by(id=collection_id, organization_id=context.organization.id).first()
+    if collection is None:
+        raise HTTPException(404, "知识库不存在")
+    rows = db.query(KnowledgeItem).filter_by(collection_id=collection_id).all()
+    documents = {item.id: item for item in db.query(DocumentRecord).filter(DocumentRecord.id.in_([row.document_id for row in rows])).all()} if rows else {}
+    return {
+        "items": [
+            {
+                "id": row.id,
+                "document_id": row.document_id,
+                "filename": documents[row.document_id].filename if row.document_id in documents else "未知文档",
+                "status": row.status,
+                "chunk_count": row.chunk_count,
+                "created_at": row.created_at,
+            }
+            for row in rows
+        ]
+    }
 
 
 @router.get("/knowledge/{collection_id}/graph")
@@ -729,14 +789,56 @@ def knowledge_graph(
     builder = KnowledgeGraphBuilder()
     entities: dict[str, dict] = {}
     relations: dict[str, dict] = {}
+    documents = db.query(DocumentRecord).filter(DocumentRecord.id.in_(document_ids)).all() if document_ids else []
+    for document in documents:
+        entity_id = f"document:{document.id}"
+        entities[entity_id] = {
+            "entity_id": entity_id,
+            "entity_type": "文档",
+            "name": document.filename,
+            "attributes": {"file_type": document.file_type, "category": document.category},
+            "source_ids": [document.id],
+            "source_document_id": document.id,
+            "source_filename": document.filename,
+        }
+    chunks = db.query(KnowledgeChunk).filter_by(collection_id=collection.id).all()
+    for chunk in chunks:
+        entity_id = f"chunk:{chunk.id}"
+        source_document = next((item for item in documents if item.id == chunk.document_id), None)
+        entities[entity_id] = {
+            "entity_id": entity_id,
+            "entity_type": "片段",
+            "name": f"片段 {chunk.chunk_index + 1}",
+            "attributes": {"preview": chunk.content[:160], **(chunk.location or {})},
+            "source_ids": [chunk.document_id],
+            "source_document_id": chunk.document_id,
+            "source_filename": source_document.filename if source_document else "未知文档",
+        }
+        relation_id = f"contains:{chunk.document_id}:{chunk.id}"
+        relations[relation_id] = {
+            "relation_id": relation_id,
+            "source_entity_id": f"document:{chunk.document_id}",
+            "target_entity_id": entity_id,
+            "relation_type": "包含",
+            "attributes": {},
+            "source_document_id": chunk.document_id,
+        }
     for extraction in extractions:
         graph = builder.from_extraction_result(
             extraction.extracted_data or {}, graph_id=f"document:{extraction.document_id}"
         )
         for entity in graph.entities:
-            entities[entity.entity_id] = entity.to_dict()
+            item = entity.to_dict()
+            item["source_document_id"] = extraction.document_id
+            source_document = next((row for row in documents if row.id == extraction.document_id), None)
+            item["source_filename"] = source_document.filename if source_document else "未知文档"
+            if entity.entity_type == "文档":
+                item["name"] = item["source_filename"]
+            entities[entity.entity_id] = item
         for relation in graph.relations:
-            relations[relation.relation_id] = relation.to_dict()
+            item = relation.to_dict()
+            item["source_document_id"] = extraction.document_id
+            relations[relation.relation_id] = item
     return {
         "collection_id": collection.id,
         "entities": list(entities.values()),
@@ -763,6 +865,7 @@ def list_schedules(db: Session = Depends(get_db), user: User = Depends(get_curre
             {
                 "id": row.id,
                 "workflow_id": row.workflow_id,
+                "document_id": row.document_id,
                 "name": row.name,
                 "cron_expression": row.cron_expression,
                 "timezone": row.timezone,
@@ -770,6 +873,7 @@ def list_schedules(db: Session = Depends(get_db), user: User = Depends(get_curre
                 "retry_limit": row.retry_limit,
                 "last_run_at": row.last_run_at,
                 "next_run_at": row.next_run_at,
+                "last_status": row.last_status,
             }
             for row in rows
         ]
@@ -780,19 +884,26 @@ def list_schedules(db: Session = Depends(get_db), user: User = Depends(get_curre
 def create_schedule(payload: ScheduleCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     context = ensure_context(db, user)
     context.require("member")
-    if (
-        db.query(WorkflowDefinition).filter_by(id=payload.workflow_id, organization_id=context.organization.id).first()
-        is None
-    ):
+    if db.query(WorkflowDefinition).filter_by(id=payload.workflow_id, organization_id=context.organization.id).first() is None:
         raise HTTPException(404, "工作流不存在")
+    if db.query(DocumentRecord).filter_by(id=payload.document_id, organization_id=context.organization.id).first() is None:
+        raise HTTPException(404, "计划任务使用的文档不存在")
+    try:
+        next_run_at = next_cron_time(payload.cron_expression, payload.timezone)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
     row = AutomationSchedule(
-        id=uuid.uuid4().hex, organization_id=context.organization.id, user_id=user.id, **payload.model_dump()
+        id=uuid.uuid4().hex,
+        organization_id=context.organization.id,
+        user_id=user.id,
+        next_run_at=next_run_at,
+        **payload.model_dump(),
     )
     db.add(row)
     audit(db, context, user, "schedule.create", "schedule", row.id)
     db.commit()
     db.refresh(row)
-    return {"id": row.id, "name": row.name, "cron_expression": row.cron_expression, "status": row.status}
+    return {"id": row.id, "name": row.name, "cron_expression": row.cron_expression, "status": row.status, "next_run_at": row.next_run_at}
 
 
 @router.delete("/schedules/{schedule_id}", status_code=204)
@@ -838,12 +949,13 @@ def change_plan(payload: PlanUpdate, db: Session = Depends(get_db), user: User =
 def operations(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     context = ensure_context(db, user)
     context.require("admin")
-    tasks = dict(
-        db.query(TaskRecord.status, func.count(TaskRecord.id))
+    tasks: dict[str, int] = {
+        str(task_status): int(count)
+        for task_status, count in db.query(TaskRecord.status, func.count(TaskRecord.id))
         .filter_by(organization_id=context.organization.id)
         .group_by(TaskRecord.status)
         .all()
-    )
+    }
     recent_errors = (
         db.query(TaskRecord)
         .filter_by(organization_id=context.organization.id, status="failed")
@@ -851,6 +963,30 @@ def operations(db: Session = Depends(get_db), user: User = Depends(get_current_u
         .limit(10)
         .all()
     )
+    services: dict[str, dict] = {}
+    started = time.perf_counter()
+    try:
+        with engine.connect() as connection:
+            connection.execute(text("SELECT 1"))
+        services["database"] = {"status": "healthy", "latency_ms": round((time.perf_counter() - started) * 1000, 2)}
+    except Exception as exc:
+        services["database"] = {"status": "unavailable", "message": str(exc)[:120]}
+    started = time.perf_counter()
+    try:
+        with redis.from_url(settings.redis_url, socket_timeout=1) as client:
+            client.ping()
+        services["redis"] = {"status": "healthy", "latency_ms": round((time.perf_counter() - started) * 1000, 2)}
+    except Exception as exc:
+        services["redis"] = {"status": "unavailable", "message": str(exc)[:120]}
+    try:
+        replies = celery_app.control.inspect(timeout=0.8).ping() or {}
+        services["queue"] = {"status": "healthy" if replies else "unavailable", "workers": len(replies)}
+    except Exception as exc:
+        services["queue"] = {"status": "unavailable", "message": str(exc)[:120]}
+    provider = os.getenv("LLM_PROVIDER", "openai")
+    key_name = "DASHSCOPE_API_KEY" if provider == "aliyun" else "OPENAI_API_KEY"
+    services["model"] = {"status": "configured" if os.getenv(key_name) else "unconfigured", "provider": provider}
+    services["api"] = {"status": "healthy"}
     return {
         "task_counts": tasks,
         "recent_errors": [
@@ -863,7 +999,7 @@ def operations(db: Session = Depends(get_db), user: User = Depends(get_current_u
             }
             for row in recent_errors
         ],
-        "services": {"api": "healthy", "database": "healthy", "queue": "healthy"},
+        "services": services,
     }
 
 

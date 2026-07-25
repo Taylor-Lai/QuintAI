@@ -31,6 +31,8 @@ const navigation = [
   { to: '/workspace/documents', label: '文档库', icon: '▤' },
   { to: '/workspace/reviews', label: '人工复核', icon: '✓' },
   { to: '/workspace/workflows', label: '工作流', icon: '⌘' },
+  { to: '/workspace/executions', label: '执行驾驶舱', icon: '◉' },
+  { to: '/workspace/knowledge', label: '知识与证据', icon: '◇' },
   { to: '/workspace/enterprise', label: '企业控制台', icon: '企' }
 ]
 </script>

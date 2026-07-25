@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from docnexus.core.settings import get_settings
 from docnexus.db import TaskRecord
+from docnexus.services.task_progress import TASK_STEP_TOTALS
 
 
 class TaskRepository:
@@ -19,6 +20,8 @@ class TaskRepository:
             payload=payload,
             status="queued",
             progress=0,
+            completed_steps=0,
+            total_steps=TASK_STEP_TOTALS.get(kind, 1),
             stage="等待执行",
             max_attempts=get_settings().task_max_attempts,
         )

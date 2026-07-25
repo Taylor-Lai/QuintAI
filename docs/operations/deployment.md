@@ -12,6 +12,7 @@ Compose 包含以下服务：
 
 - `app`：FastAPI、编译后的前端和数据库迁移；
 - `worker`：独立执行 AI 与文档任务；
+- `scheduler`：每 30 秒扫描到期的 Cron 工作流并投递任务；
 - `postgres`：业务数据和任务状态；
 - `redis`：任务队列与结果后端。
 

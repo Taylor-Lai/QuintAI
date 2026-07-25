@@ -145,6 +145,35 @@ def _constraint_key(constraint: Constraint) -> tuple[str, str | None, str, str]:
     return constraint.kind, constraint.field, constraint.operator, str(constraint.value)
 
 
+def _apply_deterministic_constraint_hints(
+    operations: list[TaskOperation], constraints: list[Constraint]
+) -> None:
+    """Make executable parameters agree with constraints parsed directly from the request."""
+    sort_constraints = [item for item in constraints if item.kind == "sort" and item.field]
+    limit_constraint = next((item for item in constraints if item.kind == "limit"), None)
+    for operation in operations:
+        if operation.op == "sort" and sort_constraints:
+            raw_field = operation.params.get("field") or operation.params.get("by")
+            if isinstance(raw_field, list):
+                raw_field = raw_field[0] if raw_field else None
+            constraint = next(
+                (
+                    item
+                    for item in sort_constraints
+                    if raw_field is not None and _normalize(item.field) == _normalize(raw_field)
+                ),
+                sort_constraints[0],
+            )
+            operation.params["field"] = constraint.field or str(raw_field or "")
+            operation.params["order"] = "desc" if str(constraint.operator).lower() == "desc" else "asc"
+            operation.params.pop("by", None)
+        elif operation.op == "limit" and limit_constraint is not None:
+            try:
+                operation.params["n"] = int(str(limit_constraint.value))
+            except (TypeError, ValueError):
+                pass
+
+
 def compile_task_understanding(task_spec: TaskSpec, result: dict[str, object] | None) -> TaskPlan:
     """Compile an LLM result, merge safe constraints, and attach the plan to TaskSpec."""
     if not result:
@@ -192,6 +221,8 @@ def compile_task_understanding(task_spec: TaskSpec, result: dict[str, object] | 
         if key not in seen:
             task_spec.constraints.append(constraint)
             seen.add(key)
+
+    _apply_deterministic_constraint_hints(operations, task_spec.constraints)
 
     unresolved = result.get("unresolved") or []
     plan = TaskPlan(

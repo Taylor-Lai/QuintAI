@@ -37,6 +37,7 @@ def _slug(value: str, user_id: str) -> str:
 
 
 def ensure_context(db: Session, user: User) -> EnterpriseContext:
+    organization: Organization | None
     membership = None
     if user.active_organization_id:
         membership = (
@@ -97,6 +98,7 @@ def ensure_context(db: Session, user: User) -> EnterpriseContext:
         if user.active_organization_id != organization.id:
             user.active_organization_id = organization.id
             db.commit()
+    assert organization is not None and membership is not None
     return EnterpriseContext(organization=organization, membership=membership)
 
 

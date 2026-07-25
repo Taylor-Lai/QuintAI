@@ -49,6 +49,7 @@ class KnowledgeItemCreate(BaseModel):
 
 class ScheduleCreate(BaseModel):
     workflow_id: str = Field(min_length=32, max_length=32)
+    document_id: str = Field(min_length=32, max_length=32)
     name: str = Field(min_length=2, max_length=120)
     cron_expression: str = Field(min_length=5, max_length=80)
     timezone: str = Field(default="Asia/Shanghai", max_length=50)

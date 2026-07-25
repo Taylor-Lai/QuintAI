@@ -84,9 +84,13 @@ class TaskRecord(Base):
     kind: Mapped[str] = mapped_column(String(30), index=True)
     status: Mapped[str] = mapped_column(String(20), default="queued", index=True)
     progress: Mapped[int] = mapped_column(default=0)
+    completed_steps: Mapped[int] = mapped_column(default=0)
+    total_steps: Mapped[int] = mapped_column(default=1)
     stage: Mapped[str] = mapped_column(String(100), default="等待执行")
     payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     result_data: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    quality_report: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    evidence_summary: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     output_path: Mapped[str | None] = mapped_column(Text)
     output_name: Mapped[str | None] = mapped_column(String(255))
     error_code: Mapped[str | None] = mapped_column(String(50))
@@ -100,6 +104,26 @@ class TaskRecord(Base):
     updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
 
     user: Mapped[User] = relationship(back_populates="tasks")
+
+
+class TaskEvent(Base):
+    """Durable event emitted by a real task or agent pipeline step."""
+
+    __tablename__ = "task_events"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    task_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("task_records.id", ondelete="CASCADE"), index=True
+    )
+    sequence: Mapped[int] = mapped_column(index=True)
+    node_code: Mapped[str] = mapped_column(String(80), index=True)
+    label: Mapped[str] = mapped_column(String(160))
+    status: Mapped[str] = mapped_column(String(20), index=True)
+    progress: Mapped[int] = mapped_column(default=0)
+    detail: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    started_at: Mapped[datetime | None]
+    completed_at: Mapped[datetime | None]
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
 
 
 class DocumentRecord(Base):
@@ -361,6 +385,27 @@ class WebhookEndpoint(Base):
     updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
 
 
+class WebhookDelivery(Base):
+    __tablename__ = "webhook_deliveries"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("organizations.id", ondelete="CASCADE"), index=True
+    )
+    endpoint_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("webhook_endpoints.id", ondelete="CASCADE"), index=True
+    )
+    event: Mapped[str] = mapped_column(String(80), index=True)
+    status: Mapped[str] = mapped_column(String(20), default="queued", index=True)
+    attempts: Mapped[int] = mapped_column(default=0)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    response_status: Mapped[int | None]
+    error_message: Mapped[str | None] = mapped_column(Text)
+    delivered_at: Mapped[datetime | None]
+    created_at: Mapped[datetime] = mapped_column(default=utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
+
+
 class KnowledgeCollection(Base):
     __tablename__ = "knowledge_collections"
 
@@ -392,6 +437,24 @@ class KnowledgeItem(Base):
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
 
 
+class KnowledgeChunk(Base):
+    __tablename__ = "knowledge_chunks"
+    __table_args__ = (UniqueConstraint("collection_id", "document_id", "chunk_index", name="uq_knowledge_chunk"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    collection_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("knowledge_collections.id", ondelete="CASCADE"), index=True
+    )
+    document_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("document_records.id", ondelete="CASCADE"), index=True
+    )
+    chunk_index: Mapped[int]
+    content: Mapped[str] = mapped_column(Text)
+    location: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    embedding: Mapped[list[float]] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+
+
 class AutomationSchedule(Base):
     __tablename__ = "automation_schedules"
 
@@ -402,6 +465,9 @@ class AutomationSchedule(Base):
     workflow_id: Mapped[str] = mapped_column(
         String(32), ForeignKey("workflow_definitions.id", ondelete="CASCADE"), index=True
     )
+    document_id: Mapped[str | None] = mapped_column(
+        String(32), ForeignKey("document_records.id", ondelete="CASCADE"), index=True
+    )
     user_id: Mapped[str] = mapped_column(String(32), ForeignKey("users.id", ondelete="CASCADE"), index=True)
     name: Mapped[str] = mapped_column(String(120))
     cron_expression: Mapped[str] = mapped_column(String(80))
@@ -410,6 +476,7 @@ class AutomationSchedule(Base):
     retry_limit: Mapped[int] = mapped_column(default=2)
     last_run_at: Mapped[datetime | None]
     next_run_at: Mapped[datetime | None]
+    last_status: Mapped[str | None] = mapped_column(String(20))
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
 

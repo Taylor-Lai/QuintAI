@@ -14,10 +14,12 @@ class DocumentUpdate(BaseModel):
 class ReviewField(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     value: Any = None
+    original_value: Any = None
     confidence: float = Field(default=0.5, ge=0, le=1)
     evidence: str = Field(default="", max_length=2000)
     source_page: int | None = Field(default=None, ge=1)
     corrected: bool = False
+    auto_fixed: bool = False
 
 
 class ReviewUpdate(BaseModel):

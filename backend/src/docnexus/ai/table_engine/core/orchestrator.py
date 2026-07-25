@@ -9,7 +9,7 @@ from docnexus.ai.table_engine.candidates.builders import (
     structured_record_to_candidate,
 )
 from docnexus.ai.table_engine.core.models import CanonicalDocument, FileAsset, FillRunResult
-from docnexus.ai.table_engine.core.runtime import AgentState, GraphRuntime, LangGraphRuntime
+from docnexus.ai.table_engine.core.runtime import AgentState, GraphRuntime, LangGraphRuntime, ProgressCallback
 from docnexus.ai.table_engine.storage import dump_intermediate_artifacts
 
 
@@ -37,7 +37,7 @@ class SequentialOrchestrator:
     def __init__(self, registry) -> None:
         self.registry = registry
 
-    def run(self, files: list[FileAsset]) -> FillRunResult:
+    def run(self, files: list[FileAsset], progress_callback: ProgressCallback | None = None) -> FillRunResult:
         documents, template_doc, user_request_doc, source_docs = _parse_and_classify(self.registry, files)
 
         template_spec = self.registry.template_analyzer.analyze(template_doc)
@@ -135,9 +135,9 @@ class MultiAgentOrchestrator:
             source_docs=source_docs,
         )
 
-    def run(self, files: list[FileAsset]) -> FillRunResult:
+    def run(self, files: list[FileAsset], progress_callback: ProgressCallback | None = None) -> FillRunResult:
         state = self._build_state(files)
-        state = self.runtime.run(state)
+        state = self.runtime.run(state, progress_callback)
         if state.fill_result is None or state.verification_report is None or state.evidence_pack is None:
             raise ValueError("Multi-agent runtime did not produce a complete fill result.")
 
@@ -174,6 +174,7 @@ class MultiAgentOrchestrator:
             "target_fields": list(state.task_spec.target_fields) if state.task_spec else [],
             "record_count": len(state.records),
             "evidence_count": len(state.evidence_pack.items),
+            "evidence_items": [item.to_dict() for item in state.evidence_pack.items[:200]],
             "route_plan": list(state.route_plan),
             "selected_route": state.selected_route,
             "router_decision": state.router_decision,
