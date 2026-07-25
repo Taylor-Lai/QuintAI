@@ -26,7 +26,7 @@ QuintAI 是一套文档智能处理系统，由 FastAPI 后端、Vue 3 前端和
 ## 技术栈
 
 - 后端：FastAPI、SQLAlchemy、Pydantic、LangChain、LangGraph；
-- 前端：Vue 3、Pinia、Vue Router、Axios、ECharts、ExcelJS、Vite；
+- 前端：Vue 3、Pinia、Vue Router、Axios、ECharts、fflate、Vite；
 - 文档处理：python-docx、openpyxl、pandas；
 - 数据与任务：PostgreSQL、Redis、Celery、Alembic；
 - 部署：Docker、Docker Compose。

@@ -8,8 +8,7 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks: {
-          vue: ['vue', 'vue-router', 'pinia'],
-          spreadsheet: ['exceljs']
+          vue: ['vue', 'vue-router', 'pinia']
         }
       }
     }
