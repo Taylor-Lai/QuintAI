@@ -1,4 +1,3 @@
-import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import java.util.Properties
 
 val configuredApiBaseUrl = providers.gradleProperty("apiBaseUrl")
@@ -12,7 +11,6 @@ val keystoreProperties = Properties().apply {
 
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
@@ -72,12 +70,6 @@ android {
     }
 
     packaging.resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
-}
-
-kotlin {
-    compilerOptions {
-        jvmTarget.set(JvmTarget.JVM_17)
-    }
 }
 
 dependencies {
