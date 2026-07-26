@@ -5,7 +5,7 @@
       <div class="hero-copy">
         <h1 class="hero-title">{{ settings.siteName || '让复杂文档处理变得简单高效' }}</h1>
         <p class="hero-desc">
-          {{ settings.siteSubtitle || '智汇文枢聚焦文档理解、信息提取、表格填写与在线编辑，帮助你快速完成从识别、分析到处理的全流程任务。' }}
+          {{ settings.siteSubtitle || '慧文融通聚焦文档理解、信息提取、表格填写与在线编辑，帮助你快速完成从识别、分析到处理的全流程任务。' }}
         </p>
 
         <div class="hero-divider">

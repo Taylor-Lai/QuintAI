@@ -11,7 +11,7 @@ from docnexus.ai.knowledge_graph import KnowledgeGraphBuilder, export_graph_json
 class KnowledgeGraphSidecarTests(unittest.TestCase):
     def test_builds_graph_from_extraction_result_without_main_pipeline_flag(self) -> None:
         result = {
-            "项目名称": "智汇文枢",
+            "项目名称": "慧文融通",
             "负责人": "张三",
             "_meta": {
                 "evidence": {

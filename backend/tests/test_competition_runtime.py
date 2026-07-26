@@ -111,7 +111,7 @@ def test_webhook_publish_and_delivery_lifecycle(tmp_path, monkeypatch) -> None:
         assert delivery.delivered_at is not None
     assert captured["url"] == "https://example.com/hook"
     assert captured["timeout"] == 5
-    assert str(captured["headers"]["X-QuintAI-Signature"]).startswith("sha256=")
+    assert str(captured["headers"]["X-HuiwenRongtong-Signature"]).startswith("sha256=")
     assert webhooks.decrypt_secret(cipher.encrypt(b"plain").decode()) == "plain"
     with pytest.raises(ValueError, match="签名密钥"):
         webhooks.decrypt_secret(None)

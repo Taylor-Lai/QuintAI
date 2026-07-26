@@ -16,13 +16,13 @@ if (-not $resolvedBackup.StartsWith($repositoryRoot + [IO.Path]::DirectorySepara
     throw "备份文件必须位于项目目录内"
 }
 
-$containerPath = "/tmp/quintai-restore.dump"
+$containerPath = "/tmp/huiwenrongtong-restore.dump"
 docker compose -f (Join-Path $repositoryRoot "compose.yaml") cp `
     $resolvedBackup "postgres:$containerPath"
 if ($LASTEXITCODE -ne 0) { throw "备份文件复制失败" }
 
 docker compose -f (Join-Path $repositoryRoot "compose.yaml") exec -T postgres `
-    pg_restore -U quintai -d quintai --clean --if-exists --no-owner $containerPath
+    pg_restore -U huiwenrongtong -d huiwenrongtong --clean --if-exists --no-owner $containerPath
 if ($LASTEXITCODE -ne 0) { throw "数据库恢复失败" }
 
 docker compose -f (Join-Path $repositoryRoot "compose.yaml") exec -T postgres rm -f $containerPath

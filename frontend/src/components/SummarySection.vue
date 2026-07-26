@@ -69,7 +69,7 @@
       </div>
 
       <div class="footer-note">
-        © 2026 智汇文枢 · 智能文档处理平台
+        © 2026 慧文融通 · 智能文档处理平台
       </div>
     </div>
   </section>

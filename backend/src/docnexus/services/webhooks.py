@@ -84,9 +84,9 @@ def deliver_webhook(self, delivery_id: str) -> None:
                 content=body,
                 headers={
                     "Content-Type": "application/json",
-                    "X-QuintAI-Event": delivery.event,
-                    "X-QuintAI-Delivery": delivery.id,
-                    "X-QuintAI-Signature": f"sha256={signature}",
+                    "X-HuiwenRongtong-Event": delivery.event,
+                    "X-HuiwenRongtong-Delivery": delivery.id,
+                    "X-HuiwenRongtong-Signature": f"sha256={signature}",
                 },
                 timeout=5,
             )

@@ -621,7 +621,7 @@ def test_webhook(webhook_id: str, db: Session = Depends(get_db), user: User = De
     if endpoint is None:
         raise HTTPException(404, "Webhook 不存在")
     event_name = (endpoint.events or ["webhook.test"])[0]
-    delivery_ids = publish_event(context.organization.id, event_name, {"message": "QuintAI Webhook 测试事件"})
+    delivery_ids = publish_event(context.organization.id, event_name, {"message": "慧文融通 Webhook 测试事件"})
     return {"queued": len(delivery_ids), "delivery_ids": delivery_ids}
 
 

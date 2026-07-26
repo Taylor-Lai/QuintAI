@@ -1,7 +1,7 @@
 <template>
   <div class="library-view">
     <header class="page-heading">
-      <div><div class="eyebrow">DOCUMENT LIBRARY</div><h1>文档库</h1><p>统一保存、分类和追踪进入 QuintAI 的业务材料。</p></div>
+      <div><div class="eyebrow">DOCUMENT LIBRARY</div><h1>文档库</h1><p>统一保存、分类和追踪进入慧文融通的业务材料。</p></div>
       <button class="primary-btn" @click="showUploader = true">＋ 导入文档</button>
     </header>
 

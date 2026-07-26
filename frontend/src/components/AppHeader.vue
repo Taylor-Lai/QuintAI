@@ -5,7 +5,7 @@
         <div class="brand-logo">
           <div class="logo-circle"></div>
         </div>
-        <span class="brand-name">智汇文枢</span>
+        <span class="brand-name">慧文融通</span>
       </div>
 
       <nav class="nav">

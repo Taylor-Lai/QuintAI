@@ -68,17 +68,17 @@ class OperationalMiddleware(BaseHTTPMiddleware):
 
 def render_prometheus_metrics() -> str:
     lines = [
-        "# HELP quintai_http_requests_total Total HTTP requests.",
-        "# TYPE quintai_http_requests_total counter",
+        "# HELP huiwenrongtong_http_requests_total Total HTTP requests.",
+        "# TYPE huiwenrongtong_http_requests_total counter",
     ]
     for (method, path, status_code), count in sorted(http_requests.items()):
-        lines.append(f'quintai_http_requests_total{{method="{method}",path="{path}",status="{status_code}"}} {count}')
+        lines.append(f'huiwenrongtong_http_requests_total{{method="{method}",path="{path}",status="{status_code}"}} {count}')
     lines.extend(
         [
-            "# HELP quintai_http_request_duration_seconds_sum Cumulative HTTP request duration.",
-            "# TYPE quintai_http_request_duration_seconds_sum counter",
+            "# HELP huiwenrongtong_http_request_duration_seconds_sum Cumulative HTTP request duration.",
+            "# TYPE huiwenrongtong_http_request_duration_seconds_sum counter",
         ]
     )
     for (method, path), duration in sorted(http_duration_seconds.items()):
-        lines.append(f'quintai_http_request_duration_seconds_sum{{method="{method}",path="{path}"}} {duration:.6f}')
+        lines.append(f'huiwenrongtong_http_request_duration_seconds_sum{{method="{method}",path="{path}"}} {duration:.6f}')
     return "\n".join(lines) + "\n"

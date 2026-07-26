@@ -16,7 +16,7 @@
 from docnexus.ai.knowledge_graph import KnowledgeGraphBuilder, export_graph_json
 
 result = {
-    "项目名称": "QuintAI",
+    "项目名称": "慧文融通",
     "负责人": "张三",
     "_meta": {
         "evidence": {

@@ -17,12 +17,12 @@ plugins {
 }
 
 android {
-    namespace = "com.zhihuiwenshu.app"
+    namespace = "com.quaintai.huiwenrongtong"
     compileSdk = 36
     compileSdkMinor = 1
 
     defaultConfig {
-        applicationId = "com.zhihuiwenshu.app"
+        applicationId = "com.quaintai.huiwenrongtong"
         minSdk = 26
         targetSdk = 36
         versionCode = 1

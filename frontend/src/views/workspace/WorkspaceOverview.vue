@@ -1,7 +1,7 @@
 <template>
   <div class="overview-view">
     <header class="page-heading">
-      <div><div class="eyebrow">QUINTAI WORKSPACE</div><h1>工作台概览</h1><p>集中管理文档、复核任务和自动化流程。</p></div>
+      <div><div class="eyebrow">慧文融通工作台</div><h1>工作台概览</h1><p>集中管理文档、复核任务和自动化流程。</p></div>
       <div class="hero-actions"><button class="demo-btn" :disabled="demoLoading" @click="runDemo">{{ demoLoading ? '正在创建…' : '▶ 一键运行演示' }}</button><RouterLink to="/workspace/documents" class="primary-btn">＋ 导入文档</RouterLink></div>
     </header>
 

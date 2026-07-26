@@ -1,6 +1,6 @@
-# QuintAI（DocNexus）
+# 慧文融通
 
-QuintAI 是一套文档智能处理系统，由 FastAPI 后端、Vue 3 前端和内置 AI
+慧文融通是由 QuaintAI 团队开发的文档智能处理系统，由 FastAPI 后端、Vue 3 前端和内置 AI
 工作流组成，支持文档编辑、信息提取以及多源数据表格填充。
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -125,7 +125,7 @@ Prometheus 默认监听 `9090`，应用指标位于 `/metrics`。数据库灾备
 
 ```powershell
 ./scripts/backup-database.ps1
-./scripts/restore-database.ps1 -BackupPath ./backups/quintai-时间.dump -ConfirmRestore
+./scripts/restore-database.ps1 -BackupPath ./backups/huiwenrongtong-时间.dump -ConfirmRestore
 ```
 
 恢复命令会覆盖当前数据库，必须显式提供 `-ConfirmRestore`。在线支付、短信和企业消息平台属于外部商业服务，仓库提供安全的 API/Webhook 与手动套餐适配层，生产部署时再接入对应供应商凭据。

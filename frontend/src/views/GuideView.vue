@@ -35,9 +35,9 @@
           <div class="markdown-wrap">
             <article class="markdown-body">
               <section id="intro" class="anchor-section">
-                <h1>欢迎使用 智汇文枢</h1>
+                <h1>欢迎使用 慧文融通</h1>
                 <p>
-                  智汇文枢 是一个面向智能文档处理的综合平台，支持文档理解、
+                  慧文融通 是一个面向智能文档处理的综合平台，支持文档理解、
                   信息提取、模板使用与在线编辑等功能。
                 </p>
               </section>
@@ -184,7 +184,7 @@
                 </ul>
 
                 <blockquote>
-                  感谢使用 智汇文枢，祝你体验顺利。
+                  感谢使用 慧文融通，祝你体验顺利。
                 </blockquote>
               </section>
             </article>
@@ -200,7 +200,7 @@ import { onMounted, onBeforeUnmount, ref } from 'vue'
 import AppHeader from '../components/AppHeader.vue'
 
 const tocList = [
-  { id: 'intro', title: '欢迎使用智汇文枢' },
+  { id: 'intro', title: '欢迎使用慧文融通' },
   { id: 'features', title: '一、平台主要功能' },
   { id: 'steps', title: '二、快速使用流程' },
   { id: 'notice', title: '三、使用注意事项' },

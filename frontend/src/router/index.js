@@ -156,8 +156,8 @@ router.beforeEach((to, from, next) => {
 
 router.afterEach((to) => {
   document.title = to.meta.title
-    ? `智汇文枢 - ${to.meta.title}`
-    : '智汇文枢'
+    ? `慧文融通 - ${to.meta.title}`
+    : '慧文融通'
 })
 
 export default router

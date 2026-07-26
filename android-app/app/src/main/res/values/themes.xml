@@ -1,5 +1,5 @@
 <resources>
-    <style name="Theme.ZhihuiWenshu" parent="android:style/Theme.Material.Light.NoActionBar">
+    <style name="Theme.HuiwenRongtong" parent="android:style/Theme.Material.Light.NoActionBar">
         <item name="android:fontFamily">sans</item>
         <item name="android:windowLightStatusBar">true</item>
         <item name="android:statusBarColor">#FAF8F4</item>

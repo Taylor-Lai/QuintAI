@@ -1,4 +1,4 @@
-# QuintAI 前端
+# 慧文融通前端
 
 基于 Vue 3、Pinia、Vue Router、Axios、ECharts 和 Vite 构建的 Web 前端。
 

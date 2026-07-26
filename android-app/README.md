@@ -1,4 +1,4 @@
-# 智汇文枢 Android
+# 慧文融通 Android
 
 原生 Kotlin + Jetpack Compose 客户端，最低支持 Android 8.0（API 26）。
 

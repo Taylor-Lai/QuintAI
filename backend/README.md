@@ -1,4 +1,4 @@
-# QuintAI 后端
+# 慧文融通后端
 
 后端是名为 `docnexus-backend` 的单一可安装 Python 发行包，对外提供
 `docnexus` 包。它包含 HTTP 应用、持久化层、应用服务和 AI 处理能力。
