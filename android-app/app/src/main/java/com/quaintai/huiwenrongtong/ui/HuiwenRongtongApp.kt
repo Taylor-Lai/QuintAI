@@ -36,6 +36,7 @@ fun HuiwenRongtongApp(
     onRefreshTasks: () -> Unit,
     onOpenTask: (String) -> Unit,
     onLoadModule: (PlatformModule) -> Unit,
+    onCreateDemoRun: ((String) -> Unit) -> Unit,
     onUploadWorkspaceDocuments: (List<Uri>, String, String) -> Unit,
     onDeleteWorkspaceDocument: (String) -> Unit,
     onArchiveWorkspaceDocument: (String, Boolean) -> Unit,
@@ -178,6 +179,14 @@ fun HuiwenRongtongApp(
                         loading = module in state.loadingModules,
                         onBack = { navController.popBackStack() },
                         onRefresh = { onLoadModule(module) },
+                        onCreateDemo = if (module == PlatformModule.OVERVIEW) {
+                            {
+                                onCreateDemoRun { taskId ->
+                                    onOpenTask(taskId)
+                                    navController.navigate("task/$taskId")
+                                }
+                            }
+                        } else null,
                     )
                 }
             }

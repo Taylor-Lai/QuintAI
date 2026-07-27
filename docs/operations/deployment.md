@@ -1,6 +1,15 @@
-# 部署指南
+# 部署与运维
 
-## 启动
+## 部署前检查
+
+- 使用至少 32 字符的随机 `SECRET_KEY`；
+- 设置独立的 `POSTGRES_PASSWORD`，不得沿用示例值；
+- 限制 `CORS_ORIGINS`，并通过密钥管理系统注入模型凭据；
+- 为域名配置 HTTPS，并确保 Android 与浏览器均信任证书链；
+- 规划 PostgreSQL、Redis 和任务文件卷的备份与容量；
+- 不得把 `.env`、发布签名、数据库备份或用户文件提交到 Git。
+
+## Docker Compose 启动
 
 ```powershell
 Copy-Item .env.example .env
@@ -8,30 +17,61 @@ docker compose up --build -d
 docker compose ps
 ```
 
-Compose 包含以下服务：
+服务说明：
 
-- `app`：FastAPI、编译后的前端和数据库迁移；
-- `worker`：独立执行 AI 与文档任务；
-- `scheduler`：每 30 秒扫描到期的 Cron 工作流并投递任务；
-- `postgres`：业务数据和任务状态；
-- `redis`：任务队列与结果后端。
-
-生产部署前必须替换 `SECRET_KEY` 和 `POSTGRES_PASSWORD`，限制 `CORS_ORIGINS`，
-并通过密钥管理系统注入模型凭据。不得提交 `.env`。
+- `app`：执行数据库迁移，提供 FastAPI、OpenAPI 和编译后的 Web；
+- `worker`：执行 AI、文档与表格任务；
+- `scheduler`：扫描到期的定时工作流并投递任务；
+- `postgres`：保存用户、任务、文档元数据与企业数据；
+- `redis`：任务队列与结果后端；
+- `prometheus`：可选监控服务，通过 `monitoring` profile 启动。
 
 ## 健康检查
 
-- `GET /health/live`：进程存活；
-- `GET /health/ready`：检查 PostgreSQL 与 Redis；
-- `GET /health`：基础服务信息。
-
-容器以非 root 用户运行。PostgreSQL、Redis 和任务文件使用不同的数据卷；删除数据卷
-会永久清除相应数据，升级时不要执行 `docker compose down -v`。
-
-## 数据库迁移
-
-API 启动前自动执行 `alembic upgrade head`。手工检查版本：
+- `GET /health/live`：API 进程存活；
+- `GET /health/ready`：PostgreSQL 与 Redis 已就绪；
+- `GET /health`：基础服务信息；
+- `GET /metrics`：Prometheus 指标。
 
 ```powershell
+Invoke-RestMethod http://127.0.0.1:8000/health/ready
+docker compose logs --tail 200 app worker scheduler
+```
+
+## 数据库迁移与升级
+
+`app` 启动时会执行 `alembic upgrade head`。部署新版本前先备份数据库，再构建和启动：
+
+```powershell
+./scripts/backup-database.ps1
+docker compose build
+docker compose up -d
 docker compose exec app alembic current
 ```
+
+升级后检查健康状态、Worker 日志、关键 API 和一次完整任务。不要在升级时执行 `docker compose down -v`，该命令会删除持久卷。
+
+## 备份与恢复
+
+```powershell
+./scripts/backup-database.ps1
+./scripts/restore-database.ps1 -BackupPath ./backups/huiwenrongtong-时间.dump -ConfirmRestore
+```
+
+恢复操作会覆盖当前数据库，必须在维护窗口执行，并确保目标环境和备份版本匹配。任务文件卷需要使用独立的文件或快照备份策略。
+
+## 监控
+
+```powershell
+docker compose --profile monitoring up -d
+```
+
+Prometheus 默认监听 `9090`。生产环境还应配置日志聚合、告警、磁盘容量监控、数据库备份验证和证书到期提醒。
+
+## Android 正式环境
+
+发布包必须通过 `-PapiBaseUrl=https://.../` 写入正式 API 地址，并使用稳定的发布签名。ADB 反向端口、`127.0.0.1`、`10.0.2.2` 和明文 HTTP 只用于调试，不属于生产部署方案。
+
+## Windows 路径提示
+
+如果 Docker BuildKit 或第三方构建工具无法处理包含中文字符的工作区路径，可将仓库复制或映射到纯 ASCII 路径后构建。映射仅用于本地构建，不应写入 Compose、源码或 CI 配置。

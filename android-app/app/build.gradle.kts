@@ -4,6 +4,10 @@ val configuredApiBaseUrl = providers.gradleProperty("apiBaseUrl")
     .orElse("https://api.example.com/")
     .get()
     .let { if (it.endsWith('/')) it else "$it/" }
+val configuredDebugApiBaseUrl = providers.gradleProperty("debugApiBaseUrl")
+    .orElse("http://10.0.2.2:8000/")
+    .get()
+    .let { if (it.endsWith('/')) it else "$it/" }
 val keystorePropertiesFile = rootProject.file("keystore.properties")
 val keystoreProperties = Properties().apply {
     if (keystorePropertiesFile.exists()) keystorePropertiesFile.inputStream().use(::load)
@@ -46,7 +50,7 @@ android {
         debug {
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
-            buildConfigField("String", "API_BASE_URL", "\"http://10.0.2.2:8000/\"")
+            buildConfigField("String", "API_BASE_URL", "\"$configuredDebugApiBaseUrl\"")
         }
         release {
             isMinifyEnabled = true

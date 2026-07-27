@@ -17,6 +17,7 @@ import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -44,6 +45,7 @@ fun RemoteModuleScreen(
     loading: Boolean,
     onBack: () -> Unit,
     onRefresh: () -> Unit,
+    onCreateDemo: (() -> Unit)? = null,
 ) {
     val metrics = data?.metricEntries().orEmpty()
     val records = data?.recordEntries().orEmpty()
@@ -70,6 +72,14 @@ fun RemoteModuleScreen(
                 BrandPill("慧文融通工作台")
                 Text(module.title, style = MaterialTheme.typography.headlineLarge, modifier = Modifier.padding(top = 12.dp))
                 Text(module.description, color = BrandMuted, modifier = Modifier.padding(top = 4.dp))
+                if (onCreateDemo != null) {
+                    Button(
+                        onClick = onCreateDemo,
+                        enabled = !loading,
+                        modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
+                        shape = RoundedCornerShape(12.dp),
+                    ) { Text("创建完整演示任务") }
+                }
             }
         }
         if (loading && data == null) {

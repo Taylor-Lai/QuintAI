@@ -30,6 +30,7 @@ class MainActivity : ComponentActivity() {
                     onRefreshTasks = appViewModel::refreshTasks,
                     onOpenTask = appViewModel::loadTask,
                     onLoadModule = appViewModel::loadModule,
+                    onCreateDemoRun = appViewModel::createDemoRun,
                     onUploadWorkspaceDocuments = appViewModel::uploadWorkspaceDocuments,
                     onDeleteWorkspaceDocument = appViewModel::deleteWorkspaceDocument,
                     onArchiveWorkspaceDocument = appViewModel::archiveWorkspaceDocument,

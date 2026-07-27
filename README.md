@@ -1,91 +1,100 @@
 # 慧文融通
 
-慧文融通是由 QuaintAI 团队开发的文档智能处理系统，由 FastAPI 后端、Vue 3 前端和内置 AI
-工作流组成，支持文档编辑、信息提取以及多源数据表格填充。
+慧文融通是 QuaintAI 团队开发的文档智能处理平台，面向复杂文档编辑、结构化信息提取和多源表格填充场景。仓库同时包含 Web 端、Android 原生客户端、FastAPI 后端、异步任务系统和可追溯的 AI 工作流。
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.11%2B-blue.svg)](https://www.python.org/)
 [![Vue](https://img.shields.io/badge/Vue-3-42b883.svg)](https://vuejs.org/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-005571.svg)](https://fastapi.tiangolo.com/)
+[![Android](https://img.shields.io/badge/Android-8.0%2B-3ddc84.svg)](android-app/README.md)
 
-## 核心能力
+## 产品能力
 
-- 根据自然语言要求编辑 Word 文档内容与格式；
-- 从非结构化文档中提取指定字段，并保留证据与历史记录；
-- 将多个 DOCX、XLSX、TXT 等来源的数据融合写入目标表格；
-- 提供用户认证、任务管理、历史记录和后台管理界面；
-- 支持规则、RAG、Agent Skill 与大语言模型协同处理。
-- 提供由真实处理节点驱动的进度、执行时间线、质量报告和单元格级证据；
-- 提供一键演示任务，便于比赛现场快速展示完整处理闭环；
-- 提供组织空间、分级角色权限、操作审计、协作评论和站内通知；
-- 提供文档及工作流版本、人工复核、批量审批、定时任务和失败重试；
-- 提供本地混合向量检索、可追溯引用及连接文档、片段和抽取实体的知识图谱；
-- 提供 API 密钥、带签名与投递记录的 Webhook、套餐配额、质量分析和运行看板；
-- 提供 Prometheus 指标、可选监控容器、文档归档及 PostgreSQL 备份恢复脚本。
+- 使用自然语言编辑 Word 文档的内容、结构与格式；
+- 从合同、报告、说明书等非结构化材料中提取字段，并保留证据与历史记录；
+- 融合 DOCX、XLSX、TXT 等多个来源，完成模板表格填充、公式计算与异常追溯；
+- 以真实任务节点展示进度、执行时间线、质量报告、失败原因和重试状态；
+- 提供用户认证、任务中心、文档工作台、人工复核、批量审批和一键演示任务；
+- 提供组织、成员、角色、审计日志、评论、通知、工作流版本和定时任务；
+- 提供混合检索、知识图谱、API 密钥、签名 Webhook、配额与运行分析；
+- Web 与 Android 原生端共用同一套后端接口和业务数据。
 
-## 技术栈
+## 技术架构
 
-- 后端：FastAPI、SQLAlchemy、Pydantic、LangChain、LangGraph；
-- 前端：Vue 3、Pinia、Vue Router、Axios、ECharts、fflate、Vite；
+- Web：Vue 3、Pinia、Vue Router、Axios、ECharts、Vite；
+- Android：Kotlin、Jetpack Compose、ViewModel、Repository、Retrofit；
+- 后端：FastAPI、SQLAlchemy、Pydantic、Alembic；
+- AI 工作流：LangChain、LangGraph、规则、RAG 与 Agent Skill；
 - 文档处理：python-docx、openpyxl、pandas；
-- 数据与任务：PostgreSQL、Redis、Celery、Alembic；
-- 部署：Docker、Docker Compose。
+- 数据与任务：PostgreSQL、Redis、Celery；
+- 部署与监控：Docker Compose、Prometheus。
 
-## 项目结构
+## 仓库结构
 
 ```text
 .
-|-- backend/                 # Python 后端及服务端 AI 能力
-|   |-- alembic/             # 数据库版本迁移
-|   |-- src/docnexus/        # 可安装的应用包
-|   `-- tests/               # 单元、契约和真实接口验收测试
-|-- frontend/                # Vue 3 + Vite 前端
-|-- deploy/docker/           # 生产容器构建文件
-|-- docs/                    # 架构、开发和部署文档
+|-- android-app/             # Kotlin + Jetpack Compose 原生客户端
+|-- backend/                 # FastAPI、数据层、AI 工作流与 Celery 任务
+|-- frontend/                # Vue 3 Web 客户端
+|-- deploy/                  # 容器、监控与部署资源
+|-- docs/                    # 架构、开发和运维文档
 |-- requirements/            # Python 运行与开发依赖
-|-- scripts/                 # 可重复执行的 PowerShell 脚本
-|-- tests/manual/            # 跨系统人工验收场景及测试资料
-|-- compose.yaml
-|-- environment.yml          # 本地 Anaconda 环境定义
-`-- pyproject.toml           # 仓库级测试和代码检查配置
+|-- scripts/                 # 质量检查、备份恢复与辅助脚本
+|-- tests/manual/            # 人工端到端验收材料
+|-- compose.yaml             # 本地及单机部署编排
+|-- environment.yml          # Conda 环境定义
+`-- pyproject.toml           # 仓库级 Python 工具配置
 ```
 
-服务端 AI 能力位于 `docnexus.ai`，由后端统一提供接口和任务编排。
+后端发行包名为 `docnexus-backend`，Python 导入包仍为 `docnexus`；它们是内部工程标识，不是产品名称。Android 应用 ID 为 `com.quaintai.huiwenrongtong`，其中 `quaintai` 表示团队命名空间。
 
-## 使用 Anaconda 配置本地环境
+## 快速启动
+
+最省事的本地体验方式是 Docker Compose：
 
 ```powershell
-conda activate wangtiao-engineering
-python -m pip install -r requirements/runtime.txt -r requirements/dev.txt
+Copy-Item .env.example .env
+docker compose up --build -d
+docker compose ps
+```
+
+服务就绪后访问：
+
+- Web 与 API：`http://127.0.0.1:8000`
+- OpenAPI：`http://127.0.0.1:8000/docs`
+- 就绪检查：`http://127.0.0.1:8000/health/ready`
+
+Compose 会启动 API、Worker、调度器、PostgreSQL 和 Redis。首次启动及重新构建可能需要下载镜像和依赖。
+
+## 本地开发
+
+### 后端
+
+```powershell
+conda env create -f environment.yml
+conda activate huiwen-rongtong
 python -m pip install --no-deps -e backend
 Copy-Item .env.example .env
-```
-
-新环境也可以在仓库根目录执行 `conda env create -f environment.yml` 创建。
-调用 AI 接口前，请在 `.env` 中设置高强度 `SECRET_KEY` 并配置模型供应商。
-
-## 启动项目
-
-本地启动前先执行数据库迁移：
-
-```powershell
 python -m alembic upgrade head
 uvicorn docnexus.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
-AI 接口采用异步任务模式。本地联调还需启动 Redis，并在另一个终端启动 Worker：
+异步任务还需要 Redis 和 Worker：
 
 ```powershell
 celery -A docnexus.worker.celery_app:celery_app worker --loglevel=INFO
 ```
 
-启动前端：
+### Web
 
 ```powershell
 Set-Location frontend
 npm install
 npm run dev
 ```
+
+### Android
+
+使用 Android Studio 打开 `android-app` 目录。模拟器调试包默认访问宿主机 `http://10.0.2.2:8000/`；真机联调、签名和正式构建请参阅 [Android 开发指南](android-app/README.md)。
 
 ## 质量检查
 
@@ -94,42 +103,28 @@ pytest -m "not api_acceptance" --cov=docnexus --cov-fail-under=59
 ruff check backend scripts
 mypy
 python scripts/evaluate_table_engine.py
+
 Set-Location frontend
 npm run lint
 npm run build
 npm audit --omit=dev
+
+Set-Location ../android-app
+./gradlew.bat :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
 ```
 
-需要真实模型凭据的测试位于 `backend/tests/acceptance`，并带有
-`api_acceptance` 标记。人工端到端测试及其输入、模板和预期结果位于
-`tests/manual`，每个场景均附有操作说明。
+真实模型验收位于 `backend/tests/acceptance`，需要单独配置模型凭据。跨端人工验收材料位于 [tests/manual](tests/manual/README.md)。
 
-## 容器部署
+## 文档导航
 
-```powershell
-docker compose up --build
-```
+- [文档索引](docs/README.md)
+- [系统架构](docs/architecture/overview.md)
+- [开发环境配置](docs/development/setup.md)
+- [仓库工程规范](docs/development/conventions.md)
+- [部署与运维](docs/operations/deployment.md)
+- [贡献指南](CONTRIBUTING.md)
+- [安全策略](SECURITY.md)
 
-Compose 会启动 API、Worker、定时调度器、PostgreSQL 和 Redis。API 通过 8000 端口同时提供
-编译后的前端和接口；业务数据、队列状态和任务文件分别使用独立数据卷持久化。
-
-更多内容请查看[文档索引](docs/README.md)。
-
-启用可选 Prometheus 监控：
-
-```powershell
-docker compose --profile monitoring up -d
-```
-
-Prometheus 默认监听 `9090`，应用指标位于 `/metrics`。数据库灾备命令：
-
-```powershell
-./scripts/backup-database.ps1
-./scripts/restore-database.ps1 -BackupPath ./backups/huiwenrongtong-时间.dump -ConfirmRestore
-```
-
-恢复命令会覆盖当前数据库，必须显式提供 `-ConfirmRestore`。在线支付、短信和企业消息平台属于外部商业服务，仓库提供安全的 API/Webhook 与手动套餐适配层，生产部署时再接入对应供应商凭据。
-
-## 开源许可证
+## 许可证
 
 本项目采用 [MIT License](LICENSE)。
