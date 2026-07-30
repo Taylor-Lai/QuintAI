@@ -25,7 +25,7 @@
 - `backend/src/docnexus/services`：文件解析、质量校验、调度、企业能力和外部回调；
 - `backend/src/docnexus/ai`：AI 工作流、算法与运行时 Skill，不得反向依赖 API 路由；
 - `frontend/src/views`、`components`、`stores`、`api`：分别承载页面、组件、状态和 HTTP 客户端；
-- `android-app`：UI 通过 ViewModel 调用 Repository，不在 Composable 中直接实现网络或持久化逻辑。
+- `android-app`：UI 通过 ViewModel 调用 Repository；Composable 不得直接实现网络访问或持久化逻辑。
 
 ## 变更要求
 
@@ -39,11 +39,11 @@
 ## 文档边界
 
 - 根 `README.md` 只维护产品、仓库和职责入口，不重复各端的完整命令；
-- `backend/README.md`、`frontend/README.md` 和 `android-app/README.md` 分别维护端内开发与检查方法；
+- `backend/README.md`、`frontend/README.md` 与 `android-app/README.md` 分别维护对应子系统的开发和检查方法；
 - `docs/architecture` 解释稳定的组件关系，`docs/development` 说明开发约定，`docs/operations` 说明部署运行；
 - `docs/release-readiness.md` 记录发布门槛和当次验证事实，不替代长期开发说明；
 - `tests/manual` 只保存可复现的验收材料和期望结果，不保存真实用户数据或临时截图。
 
 ## 提交前检查
 
-只运行与变更相关的最小检查，并在合并前完成对应端的完整检查。不要为了通过检查而降低安全校验、删除有效测试或静默忽略异常。
+开发过程中可优先执行与变更相关的最小检查集；合并前必须完成受影响子系统的完整检查。严禁通过降低安全校验、删除有效测试或静默忽略异常的方式规避质量门禁。

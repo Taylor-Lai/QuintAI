@@ -7,7 +7,7 @@
 - 限制 `CORS_ORIGINS`，并通过密钥管理系统注入模型凭据；
 - 为域名配置 HTTPS，并确保 Android 与浏览器均信任证书链；
 - 规划 PostgreSQL、Redis 和任务文件卷的备份与容量；
-- 不得把 `.env`、发布签名、数据库备份或用户文件提交到 Git。
+- 不得将 `.env`、发布签名、数据库备份或用户文件提交至 Git 仓库。
 
 ## Docker Compose 启动
 
@@ -40,7 +40,7 @@ docker compose logs --tail 200 app worker scheduler
 
 ## 数据库迁移与升级
 
-`app` 启动时会执行 `alembic upgrade head`。部署新版本前先备份数据库，再构建和启动：
+`app` 启动时会执行 `alembic upgrade head`。部署新版本前必须完成数据库备份，随后执行镜像构建与服务启动：
 
 ```powershell
 ./scripts/backup-database.ps1
@@ -49,7 +49,7 @@ docker compose up -d
 docker compose exec app alembic current
 ```
 
-升级后检查健康状态、Worker 日志、关键 API 和一次完整任务。不要在升级时执行 `docker compose down -v`，该命令会删除持久卷。
+升级完成后，应验证服务健康状态、Worker 日志、关键 API 及至少一项完整业务任务。升级期间禁止执行 `docker compose down -v`，该命令会删除持久化数据卷。
 
 ## 备份与恢复
 

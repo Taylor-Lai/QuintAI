@@ -1,15 +1,15 @@
 # 慧文融通 Android 原生端
 
-Android 客户端使用 Kotlin 与 Jetpack Compose 开发，最低支持 Android 8.0（API 26），目标 SDK 为 36。它与 Web 端共用慧文融通后端，采用 ViewModel + Repository 的分层方式管理界面和远程数据。
+Android 客户端基于 Kotlin 与 Jetpack Compose 构建，最低支持 Android 8.0（API 26），目标 SDK 为 36。客户端与 Web 端共用慧文融通服务端接口，并采用 ViewModel 与 Repository 分层管理界面状态和远程数据访问。
 
 ## 名称与包标识
 
 - 安装名称：慧文融通；
 - 正式应用 ID：`com.quaintai.huiwenrongtong`；
 - 调试应用 ID：`com.quaintai.huiwenrongtong.debug`；
-- `quaintai` 是团队命名空间，不是产品名称。
+- `quaintai`：QuaintAI 团队使用的组织命名空间。
 
-应用 ID 一旦发布到应用商店不宜再修改，否则会被视为另一个应用。若未来确需更换，应先确定域名、签名、商店迁移和深链方案。
+应用 ID 在应用商店首次发布后应保持稳定；变更应用 ID 将被平台识别为新的应用。确需调整时，应预先完成域名、签名、商店迁移与深链兼容方案评估。
 
 ## 开发环境
 
@@ -29,7 +29,7 @@ Android 客户端使用 Kotlin 与 Jetpack Compose 开发，最低支持 Android
 http://10.0.2.2:8000/
 ```
 
-也可以在构建时覆盖：
+可在构建阶段通过参数覆盖默认地址：
 
 ```powershell
 ./gradlew.bat :app:assembleDebug -PdebugApiBaseUrl=http://127.0.0.1:8000/
@@ -57,9 +57,9 @@ adb reverse tcp:8000 tcp:8000
 adb install -r -t ./app/build/outputs/apk/debug/app-debug.apk
 ```
 
-部分厂商系统会要求在手机上勾选风险提示并手工确认安装，这是系统安全步骤，不能由脚本代替。无线调试断开、手机重启或重新配对后，需要重新检查 `adb reverse --list`。
+部分厂商系统要求在设备端确认风险提示与安装授权。该安全确认无法由自动化脚本替代。无线调试断开、设备重启或重新配对后，应重新执行 `adb reverse --list` 验证端口映射。
 
-ADB 反向端口仅适合本地调试。若希望脱离电脑长期测试，应部署一个手机可访问的 HTTPS 后端，并重新构建调试包或正式包。
+ADB 反向端口仅适用于本地调试。独立于开发主机的持续测试环境应部署设备可访问的 HTTPS 服务端，并基于该地址重新构建调试包或正式包。
 
 ## 常用构建与检查
 
@@ -77,7 +77,7 @@ ADB 反向端口仅适合本地调试。若希望脱离电脑长期测试，应�
 ./gradlew.bat :app:connectedDebugAndroidTest
 ```
 
-自动化通过不等于完整业务验收。至少还应人工检查登录、工作台、三类文档任务、任务详情、结果下载、失败提示和重新进入后的会话恢复。
+自动化检查通过仅表示既定技术用例满足预期，不能替代完整业务验收。发布前仍须人工验证登录、工作台、三类文档任务、任务详情、结果下载、异常提示及会话恢复。
 
 ## 正式签名
 
@@ -95,10 +95,10 @@ ADB 反向端口仅适合本地调试。若希望脱离电脑长期测试，应�
 
 ## 常见问题
 
-- **Gradle 同步失败**：先确认 Android Studio 使用 JDK 17，并检查 SDK 36 是否安装；
+- **Gradle 同步失败**：确认 Android Studio 使用 JDK 17，并验证 SDK 36 已正确安装；
 - **中文路径错误**：将仓库映射或复制到纯 ASCII 路径后再运行 JVM 测试；
 - **真机无法访问后端**：检查后端健康状态、设备连接和 `adb reverse --list`；
-- **安装一直等待**：查看手机屏幕并完成厂商系统要求的人工确认；
+- **安装流程持续等待**：在设备端完成厂商系统要求的风险提示与安装授权确认；
 - **正式包无法联网**：确认构建时传入的是受信任 HTTPS 地址且以 `/` 结尾。
 
 返回[项目总览](../README.md)或查看[系统架构](../docs/architecture/overview.md)。

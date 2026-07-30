@@ -1,6 +1,6 @@
 # 慧文融通后端
 
-后端发行包名为 `docnexus-backend`，对外提供 Python 包 `docnexus`。该名称是内部工程标识；面向用户的产品名称统一为“慧文融通”。
+后端发行包名为 `docnexus-backend`，Python 导入包名为 `docnexus`。上述名称作为稳定工程标识予以保留；所有面向最终用户的产品名称统一为“慧文融通”。
 
 ## 目录结构
 
@@ -29,7 +29,7 @@ python -m alembic upgrade head
 uvicorn docnexus.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
-异步任务还需要 Redis 和 Worker：
+异步任务处理还需启动 Redis 与 Celery Worker：
 
 ```powershell
 celery -A docnexus.worker.celery_app:celery_app worker --loglevel=INFO
@@ -45,10 +45,10 @@ ruff check backend
 mypy
 ```
 
-`backend/tests/acceptance` 中的真实模型测试带有 `api_acceptance` 标记，需要显式配置模型凭据。不要在普通 CI 或无凭据环境中默认运行。
+`backend/tests/acceptance` 中的真实模型测试带有 `api_acceptance` 标记，仅允许在已配置模型凭据的受控环境中显式运行；常规 CI 与无凭据环境默认排除该测试集。
 
 ## 命令行工具
 
-安装后可以使用 `any2table` 入口直接运行表格处理流水线。CLI 与 HTTP 任务应复用同一领域能力，不应维护两套相互漂移的算法。
+安装完成后，可通过 `any2table` 命令行入口运行表格处理流水线。CLI 与 HTTP 任务必须复用同一领域实现，以避免业务规则和算法行为产生差异。
 
 更多内容见[开发环境配置](../docs/development/setup.md)和[系统架构](../docs/architecture/overview.md)。

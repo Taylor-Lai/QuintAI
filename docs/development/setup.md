@@ -18,11 +18,11 @@ Windows 项目路径建议使用纯 ASCII 字符。Android Gradle Plugin 已允�
 Copy-Item .env.example .env
 ```
 
-至少应替换 `SECRET_KEY`。使用真实模型时，还需填写 `LLM_PROVIDER`、`OPENAI_API_KEY`、`OPENAI_BASE_URL` 和 `OPENAI_MODEL`；示例文件故意不绑定具体模型名称，实际值以供应商当前可用模型为准。`.env`、发布签名和任何真实密钥都不得提交。
+至少须替换 `SECRET_KEY`。启用真实模型服务时，还需配置 `LLM_PROVIDER`、`OPENAI_API_KEY`、`OPENAI_BASE_URL` 与 `OPENAI_MODEL`。示例文件不预设具体模型名称，实际配置应以供应商当前提供的模型为准。`.env`、发布签名及任何真实密钥均不得提交至版本库。
 
 ## 方式一：Docker Compose
 
-该方式适合快速联调完整系统：
+该方式适用于完整服务栈的本地集成验证：
 
 ```powershell
 docker compose up --build -d
@@ -46,7 +46,7 @@ conda activate huiwen-rongtong
 python -m pip install --no-deps -e backend
 ```
 
-也可以手工创建环境：
+如不使用 `environment.yml`，可按以下步骤创建 Python 环境：
 
 ```powershell
 conda create -n huiwen-rongtong python=3.11 pip -y
@@ -62,13 +62,13 @@ python -m alembic upgrade head
 uvicorn docnexus.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
-AI 接口使用异步任务模式，还需 Redis 和 Worker：
+AI 接口采用异步任务模式，因此还需启动 Redis 与 Celery Worker：
 
 ```powershell
 celery -A docnexus.worker.celery_app:celery_app worker --loglevel=INFO
 ```
 
-需要验证定时工作流时，再启动 Celery Beat 或使用 Compose 中的 `scheduler` 服务。
+验证定时工作流时，还应启动 Celery Beat，或使用 Compose 中的 `scheduler` 服务。
 
 ### Web 前端
 
@@ -78,7 +78,7 @@ npm install
 npm run dev
 ```
 
-开发服务器通过 Vite 代理访问本地 API。不要把生产密钥写入 `VITE_*` 变量，因为浏览器端变量会进入构建产物。
+开发服务器通过 Vite 代理访问本地 API。`VITE_*` 变量会写入浏览器构建产物，因此严禁用于保存生产密钥或其他敏感信息。
 
 ## Android 开发
 
