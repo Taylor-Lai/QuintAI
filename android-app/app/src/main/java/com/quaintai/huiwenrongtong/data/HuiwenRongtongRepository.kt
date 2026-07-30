@@ -69,6 +69,7 @@ class HuiwenRongtongRepository(
     suspend fun task(id: String): TaskDto = apiCall { api.task(id) }
     suspend fun cancelTask(id: String): TaskDto = apiCall { api.cancelTask(id) }
     suspend fun retryTask(id: String): TaskDto = apiCall { api.retryTask(id) }
+    suspend fun deleteTask(id: String) = apiCall { api.deleteTask(id) }
 
     suspend fun loadModule(module: PlatformModule): JsonObject = apiCall {
         when (module) {
@@ -82,21 +83,30 @@ class HuiwenRongtongRepository(
             PlatformModule.KNOWLEDGE -> api.knowledgeCollections()
             PlatformModule.ENTERPRISE -> JsonObject().apply {
                 add("dashboard", api.enterpriseDashboard())
-                runCatching { api.organization() }.getOrNull()?.let { add("organization", it) }
-                runCatching { api.organizations() }.getOrNull()?.let { add("organizations", it) }
-                runCatching { api.auditLogs() }.getOrNull()?.let { add("audit_logs", it) }
-                runCatching { api.apiKeys() }.getOrNull()?.let { add("api_keys", it) }
-                runCatching { api.webhooks() }.getOrNull()?.let { add("webhooks", it) }
-                runCatching { api.webhookDeliveries() }.getOrNull()?.let { add("webhook_deliveries", it) }
-                runCatching { api.schedules() }.getOrNull()?.let { add("schedules", it) }
-                runCatching { api.operations() }.getOrNull()?.let { add("operations", it) }
-                runCatching { api.backups() }.getOrNull()?.let { add("backups", it) }
+                addAuthorizedSection(this, "organization") { api.organization() }
+                addAuthorizedSection(this, "organizations") { api.organizations() }
+                addAuthorizedSection(this, "audit_logs") { api.auditLogs() }
+                addAuthorizedSection(this, "api_keys") { api.apiKeys() }
+                addAuthorizedSection(this, "webhooks") { api.webhooks() }
+                addAuthorizedSection(this, "webhook_deliveries") { api.webhookDeliveries() }
+                addAuthorizedSection(this, "schedules") { api.schedules() }
+                addAuthorizedSection(this, "operations") { api.operations() }
+                addAuthorizedSection(this, "backups") { api.backups() }
             }
             PlatformModule.ADMIN -> JsonObject().apply {
                 add("statistics", api.adminStatistics())
                 add("users", api.adminUsers())
             }
-            PlatformModule.TEMPLATES, PlatformModule.EDITOR, PlatformModule.GUIDE -> JsonObject()
+            PlatformModule.TEMPLATES -> api.templates()
+            PlatformModule.EDITOR, PlatformModule.GUIDE -> JsonObject()
+        }
+    }
+
+    private suspend fun addAuthorizedSection(target: JsonObject, name: String, request: suspend () -> JsonObject) {
+        try {
+            target.add(name, request())
+        } catch (error: HttpException) {
+            if (error.code() != 403) throw error
         }
     }
 
@@ -198,6 +208,12 @@ class HuiwenRongtongRepository(
         api.addKnowledgeDocument(id, JsonObject().apply { addProperty("document_id", documentId) })
     }
 
+    suspend fun rebuildKnowledgeGraph(id: String) = apiCall { api.rebuildKnowledgeGraph(id) }
+
+    suspend fun reviewKnowledgeEntity(id: String, entityId: String, reviewStatus: String) = apiCall {
+        api.reviewKnowledgeEntity(id, entityId, JsonObject().apply { addProperty("review_status", reviewStatus) })
+    }
+
     suspend fun comments(resourceType: String, resourceId: String) = apiCall { api.comments(resourceType, resourceId) }
 
     suspend fun createComment(resourceType: String, resourceId: String, content: String) = apiCall {
@@ -228,15 +244,26 @@ class HuiwenRongtongRepository(
             "webhook.delete" -> { api.deleteWebhook(payload.get("id").asString); null }
             "schedule.create" -> api.createSchedule(payload)
             "schedule.delete" -> { api.deleteSchedule(payload.get("id").asString); null }
-            "subscription.change" -> api.changePlan(payload)
             "comment.create" -> api.createComment(payload)
             "comment.resolve" -> api.resolveComment(payload.get("id").asString)
             "document.version" -> api.createDocumentVersion(payload.get("id").asString, payload.get("note")?.asString.orEmpty())
+            "template.save" -> {
+                val id = payload.get("id")?.asString.orEmpty()
+                payload.remove("id")
+                if (id.matches(Regex("^[a-f0-9]{32}$"))) api.updateTemplate(id, payload) else api.createTemplate(payload)
+            }
+            "template.delete" -> { api.deleteTemplate(payload.get("id").asString); null }
             else -> error("不支持的企业操作：$action")
         }
     }
 
     suspend fun createBackup() = apiCall { api.createBackup() }
+    suspend fun downloadBackup(id: String, destination: Uri) = apiCall {
+        val body = api.downloadBackup(id)
+        context.contentResolver.openOutputStream(destination, "w")?.use { output ->
+            body.byteStream().use { input -> input.copyTo(output) }
+        } ?: error("无法写入目标文件")
+    }
     suspend fun updateUserStatus(id: String, status: String) = apiCall { api.updateUserStatus(id, status) }
     suspend fun updateUserRole(id: String, isAdmin: Boolean) = apiCall { api.updateUserRole(id, isAdmin) }
     suspend fun deleteAdminUser(id: String) = apiCall { api.deleteAdminUser(id) }

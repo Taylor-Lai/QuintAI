@@ -46,6 +46,9 @@ interface HuiwenRongtongApi {
     @POST("tasks/{id}/retry")
     suspend fun retryTask(@Path("id") id: String): TaskDto
 
+    @DELETE("tasks/{id}")
+    suspend fun deleteTask(@Path("id") id: String)
+
     @GET("tasks/{id}/download")
     suspend fun downloadTask(@Path("id") id: String): ResponseBody
 
@@ -105,6 +108,9 @@ interface HuiwenRongtongApi {
 
     @GET("enterprise/webhook-deliveries")
     suspend fun webhookDeliveries(): JsonObject
+
+    @GET("enterprise/templates")
+    suspend fun templates(): JsonObject
 
     @GET("enterprise/schedules")
     suspend fun schedules(): JsonObject
@@ -183,6 +189,12 @@ interface HuiwenRongtongApi {
     @GET("enterprise/knowledge/{id}/graph")
     suspend fun knowledgeGraph(@Path("id") id: String): JsonObject
 
+    @POST("enterprise/knowledge/{id}/graph/rebuild")
+    suspend fun rebuildKnowledgeGraph(@Path("id") id: String): JsonObject
+
+    @PATCH("enterprise/knowledge/{id}/graph/entities/{entityId}")
+    suspend fun reviewKnowledgeEntity(@Path("id") id: String, @Path("entityId") entityId: String, @Body payload: JsonObject): JsonObject
+
     @POST("enterprise/api-keys")
     suspend fun createApiKey(@Body payload: JsonObject): JsonObject
 
@@ -221,6 +233,18 @@ interface HuiwenRongtongApi {
 
     @POST("enterprise/backups")
     suspend fun createBackup(): JsonObject
+
+    @GET("enterprise/backups/{id}/download")
+    suspend fun downloadBackup(@Path("id") id: String): ResponseBody
+
+    @POST("enterprise/templates")
+    suspend fun createTemplate(@Body payload: JsonObject): JsonObject
+
+    @PUT("enterprise/templates/{id}")
+    suspend fun updateTemplate(@Path("id") id: String, @Body payload: JsonObject): JsonObject
+
+    @DELETE("enterprise/templates/{id}")
+    suspend fun deleteTemplate(@Path("id") id: String)
 
     @DELETE("admin/users/{id}")
     suspend fun deleteAdminUser(@Path("id") id: String)

@@ -48,7 +48,10 @@ class MainActivity : ComponentActivity() {
                     onSearchKnowledge = appViewModel::searchKnowledge,
                     onLoadKnowledgeDetail = appViewModel::loadKnowledgeDetail,
                     onAddKnowledgeDocument = appViewModel::addKnowledgeDocument,
+                    onRebuildKnowledgeGraph = appViewModel::rebuildKnowledgeGraph,
+                    onReviewKnowledgeEntity = appViewModel::reviewKnowledgeEntity,
                     onCreateBackup = appViewModel::createBackup,
+                    onDownloadBackup = appViewModel::downloadBackup,
                     onEnterpriseAction = appViewModel::enterpriseAction,
                     onCreateComment = appViewModel::createComment,
                     onResolveComment = appViewModel::resolveComment,
@@ -61,6 +64,7 @@ class MainActivity : ComponentActivity() {
                     onSubmit = appViewModel::submit,
                     onCancelTask = appViewModel::cancelTask,
                     onRetryTask = appViewModel::retryTask,
+                    onDeleteTask = appViewModel::deleteTask,
                     onDownloadTask = appViewModel::downloadTask,
                     onDismissMessage = appViewModel::dismissMessage,
                 )

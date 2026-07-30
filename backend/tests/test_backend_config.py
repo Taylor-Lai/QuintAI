@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import unittest
-from pathlib import Path
 from types import SimpleNamespace
 
 from docnexus.api.dependencies import require_admin
@@ -19,7 +18,6 @@ def _settings(*, app_env: str = "development", secret_key: str | None = None) ->
         bootstrap_admin_email=None,
         bootstrap_admin_password=None,
         cors_origins=("http://localhost:5173",),
-        static_dir=Path("static"),
         database_url="sqlite:///./doc_system.db",
     )
 

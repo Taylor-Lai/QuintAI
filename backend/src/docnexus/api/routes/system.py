@@ -1,10 +1,10 @@
-"""System health and static application endpoints."""
+"""System information, health, and observability endpoints."""
 
 import logging
 
 import redis
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.responses import PlainTextResponse
 from sqlalchemy import text
 
 from docnexus.core.observability import render_prometheus_metrics
@@ -18,16 +18,10 @@ router = APIRouter()
 
 @router.get("/")
 async def root():
-    index_path = settings.static_dir / "index.html"
-    if index_path.is_file():
-        return FileResponse(
-            index_path,
-            headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
-        )
     return {
-        "message": "[START] 文档理解系统运行中",
+        "message": "慧文融通 API 运行中",
         "version": "1.0.0",
-        "docs": "/docs",
+        "docs": "/api/docs",
         "features": ["文档解析", "AI 提取", "自动填表", "历史记录"],
     }
 

@@ -66,7 +66,7 @@ describe('SummarySection', () => {
     })
 
     const userStore = useUserStore()
-    userStore.setToken('test-token')
+    userStore.setUserInfo({ username: 'tester', email: 'tester@example.com' })
     await router.push('/')
     startButton.click()
     await vi.waitFor(() => {

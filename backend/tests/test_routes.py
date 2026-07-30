@@ -2,8 +2,9 @@
 
 from docnexus.main import app
 from fastapi.routing import APIRoute
+from fastapi.testclient import TestClient
 
-EXPECTED_ROUTES = {
+UNPREFIXED_API_ROUTES = {
     ("GET", "/"),
     ("GET", "/health"),
     ("GET", "/health/live"),
@@ -26,6 +27,7 @@ EXPECTED_ROUTES = {
     ("GET", "/tasks/{task_id}"),
     ("GET", "/tasks/{task_id}/download"),
     ("GET", "/tasks/{task_id}/report"),
+    ("DELETE", "/tasks/{task_id}"),
     ("POST", "/tasks/{task_id}/cancel"),
     ("POST", "/tasks/{task_id}/retry"),
     ("GET", "/admin/users"),
@@ -77,12 +79,18 @@ EXPECTED_ROUTES = {
     ("DELETE", "/enterprise/webhooks/{webhook_id}"),
     ("POST", "/enterprise/webhooks/{webhook_id}/test"),
     ("GET", "/enterprise/webhook-deliveries"),
+    ("GET", "/enterprise/templates"),
+    ("POST", "/enterprise/templates"),
+    ("PUT", "/enterprise/templates/{template_id}"),
+    ("DELETE", "/enterprise/templates/{template_id}"),
     ("GET", "/enterprise/knowledge"),
     ("POST", "/enterprise/knowledge"),
     ("POST", "/enterprise/knowledge/{collection_id}/documents"),
     ("GET", "/enterprise/knowledge/{collection_id}/documents"),
     ("GET", "/enterprise/knowledge/{collection_id}/search"),
     ("GET", "/enterprise/knowledge/{collection_id}/graph"),
+    ("POST", "/enterprise/knowledge/{collection_id}/graph/rebuild"),
+    ("PATCH", "/enterprise/knowledge/{collection_id}/graph/entities/{entity_id}"),
     ("GET", "/enterprise/schedules"),
     ("POST", "/enterprise/schedules"),
     ("DELETE", "/enterprise/schedules/{schedule_id}"),
@@ -91,8 +99,11 @@ EXPECTED_ROUTES = {
     ("GET", "/enterprise/analytics"),
     ("GET", "/enterprise/backups"),
     ("POST", "/enterprise/backups"),
+    ("GET", "/enterprise/backups/{backup_id}/download"),
     ("GET", "/enterprise/workflow-versions/{workflow_id}"),
 }
+
+EXPECTED_ROUTES = {(method, f"/api{path}") for method, path in UNPREFIXED_API_ROUTES}
 
 
 def test_public_route_contract_is_exact() -> None:
@@ -104,3 +115,11 @@ def test_public_route_contract_is_exact() -> None:
         if method not in {"HEAD", "OPTIONS"}
     }
     assert actual == EXPECTED_ROUTES
+
+
+def test_api_prefix_is_owned_by_fastapi() -> None:
+    client = TestClient(app)
+
+    assert client.get("/api/health").status_code == 200
+    assert client.get("/api/docs").status_code == 200
+    assert client.get("/health").status_code == 404

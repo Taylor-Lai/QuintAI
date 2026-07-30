@@ -70,11 +70,11 @@ def _non_empty_rows(path: Path):
 
 def _resolve_task(client, response):
     assert response.status_code == 202, response.text
-    task = client.get(f"/tasks/{response.json()['id']}")
+    task = client.get(f"/api/tasks/{response.json()['id']}")
     assert task.status_code == 200, task.text
     payload = task.json()
     assert payload["status"] == "succeeded", payload
-    return client.get(f"/tasks/{payload['id']}/download") if payload["has_file"] else task
+    return client.get(f"/api/tasks/{payload['id']}/download") if payload["has_file"] else task
 
 
 @unittest.skipIf(_IMPORT_ERROR is not None, f"API stress dependencies unavailable: {_IMPORT_ERROR}")
@@ -94,11 +94,11 @@ class RealLlmStressMatrixTests(unittest.TestCase):
         email = f"stress-{uuid.uuid4().hex}@example.com"
         password = "Stress-Only-Password-123!"
         register_response = self.client.post(
-            "/auth/register",
+            "/api/auth/register",
             json={"username": f"stress-{uuid.uuid4().hex[:12]}", "email": email, "password": password},
         )
         self.assertEqual(register_response.status_code, 200, register_response.text)
-        login_response = self.client.post("/auth/login", json={"email": email, "password": password})
+        login_response = self.client.post("/api/auth/login", json={"email": email, "password": password})
         self.assertEqual(login_response.status_code, 200, login_response.text)
         self.client.headers.update({"Authorization": f"Bearer {login_response.json()['access_token']}"})
         self.tmp = tempfile.TemporaryDirectory()
@@ -122,7 +122,7 @@ class RealLlmStressMatrixTests(unittest.TestCase):
         )
         with source.open("rb") as file_obj:
             response = self.client.post(
-                "/doc-chat/upload",
+                "/api/doc-chat/upload",
                 data={"command": command},
                 files={"document": ("format_source.docx", file_obj, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")},
             )
@@ -157,7 +157,7 @@ class RealLlmStressMatrixTests(unittest.TestCase):
         fields = "\u9879\u76ee\u540d\u79f0,\u8d1f\u8d23\u4eba,\u9884\u7b97,\u622a\u6b62\u65e5\u671f,\u98ce\u9669\u7b49\u7ea7"
         with source.open("rb") as file_obj:
             response = self.client.post(
-                "/doc-extract/upload",
+                "/api/doc-extract/upload",
                 data={"fields": fields},
                 files={"file": ("extract_source.docx", file_obj, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")},
             )
@@ -199,7 +199,7 @@ class RealLlmStressMatrixTests(unittest.TestCase):
         )
         with template.open("rb") as template_obj, source.open("rb") as source_obj:
             response = self.client.post(
-                "/table-fill/upload",
+                "/api/table-fill/upload",
                 data={"user_request": request},
                 files=[
                     ("template", ("gdp_template.xlsx", template_obj, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")),
@@ -252,7 +252,7 @@ class RealLlmStressMatrixTests(unittest.TestCase):
         )
         with template.open("rb") as template_obj, source_xlsx.open("rb") as xlsx_obj, source_txt.open("rb") as txt_obj:
             response = self.client.post(
-                "/table-fill/upload",
+                "/api/table-fill/upload",
                 data={"user_request": request},
                 files=[
                     ("template", ("aqi_template.xlsx", template_obj, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")),
@@ -313,7 +313,7 @@ class RealLlmStressMatrixTests(unittest.TestCase):
         )
         with template.open("rb") as template_obj, source.open("rb") as source_obj:
             response = self.client.post(
-                "/table-fill/upload",
+                "/api/table-fill/upload",
                 data={"user_request": request},
                 files=[
                     ("template", ("covid_template.xlsx", template_obj, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")),
@@ -382,7 +382,7 @@ class RealLlmStressMatrixTests(unittest.TestCase):
         )
         with template.open("rb") as template_obj, global_source.open("rb") as xlsx_obj, china_docx.open("rb") as docx_obj:
             response = self.client.post(
-                "/table-fill/upload",
+                "/api/table-fill/upload",
                 data={"user_request": request},
                 files=[
                     ("template", ("covid_merge_template.xlsx", template_obj, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")),

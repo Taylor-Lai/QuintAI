@@ -34,7 +34,12 @@ from docnexus.schemas.workspace import (
     WorkflowRunCreate,
     WorkflowUpdate,
 )
-from docnexus.services.enterprise import audit, ensure_context, subscription_for
+from docnexus.services.enterprise import (
+    audit,
+    ensure_context,
+    ensure_document_capacity,
+    reserve_monthly_run,
+)
 from docnexus.services.quality import extraction_quality, safely_repair_fields
 from docnexus.services.upload_security import save_upload_safely
 from docnexus.services.validation import validate_fields
@@ -192,6 +197,13 @@ def create_demo_run(db: Session = Depends(get_db), user: User = Depends(get_curr
 
 项目背景：团队希望把分散在 Word、Excel 和文本材料中的信息统一沉淀，并让每次处理都能追溯到原始依据。
 """
+    ensure_document_capacity(
+        db,
+        context,
+        additional_documents=1,
+        additional_bytes=len(demo_content.encode("utf-8")),
+    )
+    reserve_monthly_run(db, context)
     demo_path.write_text(demo_content, encoding="utf-8")
     document = DocumentRecord(
         id=uuid.uuid4().hex,
@@ -229,8 +241,14 @@ def create_demo_run(db: Session = Depends(get_db), user: User = Depends(get_curr
             {"field": "项目预算", "type": "required", "message": "项目预算不能为空"},
         ],
     )
-    task = TaskRepository.create(db, user.id, "document_extract", {})
-    task.organization_id = context.organization.id
+    task = TaskRepository.create(
+        db,
+        user.id,
+        "document_extract",
+        {},
+        organization_id=context.organization.id,
+        commit=False,
+    )
     run = WorkflowRun(
         id=uuid.uuid4().hex,
         user_id=user.id,
@@ -292,26 +310,13 @@ async def upload_documents(
             )
             db.add(record)
             created.append(record)
-        subscription = subscription_for(db, context)
         with db.no_autoflush:
-            current_documents = (
-                db.query(func.count(DocumentRecord.id))
-                .filter(DocumentRecord.organization_id == context.organization.id)
-                .scalar()
-                or 0
+            ensure_document_capacity(
+                db,
+                context,
+                additional_documents=len(created),
+                additional_bytes=sum(item.size_bytes for item in created),
             )
-            current_storage = (
-                db.query(func.coalesce(func.sum(DocumentRecord.size_bytes), 0))
-                .filter(DocumentRecord.organization_id == context.organization.id)
-                .scalar()
-                or 0
-            )
-        if current_documents + len(created) > int(subscription.limits.get("documents", 500)):
-            raise HTTPException(409, "当前套餐的文档数量已达上限")
-        if current_storage + sum(item.size_bytes for item in created) > int(
-            subscription.limits.get("storage_bytes", 2 * 1024**3)
-        ):
-            raise HTTPException(409, "当前套餐的文档存储空间已达上限")
         audit(db, context, user, "document.upload", "document_batch", detail={"count": len(created)})
         db.commit()
         for record in created:
@@ -666,8 +671,14 @@ def run_workflow(
     if not fields:
         raise HTTPException(400, "请先在信息提取节点中配置字段")
 
-    task = TaskRepository.create(db, user.id, "document_extract", {})
-    task.organization_id = context.organization.id
+    task = TaskRepository.create(
+        db,
+        user.id,
+        "document_extract",
+        {},
+        organization_id=context.organization.id,
+        commit=False,
+    )
     run = WorkflowRun(
         id=uuid.uuid4().hex,
         user_id=user.id,
@@ -687,12 +698,7 @@ def run_workflow(
     }
     document.status = "processing"
     db.add(run)
-    subscription = subscription_for(db, context)
-    usage = dict(subscription.usage or {})
-    if int(usage.get("monthly_runs", 0)) >= int(subscription.limits.get("monthly_runs", 200)):
-        raise HTTPException(409, "当前套餐本月工作流运行次数已达上限")
-    usage["monthly_runs"] = int(usage.get("monthly_runs", 0)) + 1
-    subscription.usage = usage
+    reserve_monthly_run(db, context)
     audit(db, context, user, "workflow.run", "workflow", workflow.id, {"document_id": document.id})
     db.commit()
     db.refresh(run)

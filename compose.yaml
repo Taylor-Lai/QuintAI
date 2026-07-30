@@ -17,11 +17,32 @@ x-app-base: &app-base
   restart: unless-stopped
 
 services:
+  gateway:
+    image: huiwenrongtong-web:latest
+    build:
+      context: .
+      dockerfile: deploy/nginx/Dockerfile
+    environment:
+      NGINX_SERVER_NAME: ${NGINX_SERVER_NAME:-localhost}
+      NGINX_CLIENT_MAX_BODY_SIZE: ${NGINX_CLIENT_MAX_BODY_SIZE:-30m}
+    ports:
+      - "${HTTP_PORT:-8000}:80"
+    depends_on:
+      app:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1/nginx-health"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+    restart: unless-stopped
+
   app:
     <<: *app-base
-    command: ["sh", "-c", "alembic upgrade head && uvicorn docnexus.main:app --host 0.0.0.0 --port 8000"]
-    ports:
-      - "8000:8000"
+    command: ["sh", "-c", "alembic upgrade head && uvicorn docnexus.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips='*'"]
+    expose:
+      - "8000"
     mem_limit: 2g
     cpus: 2.0
     depends_on:
@@ -30,7 +51,7 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=3)"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health/ready', timeout=3)"]
       interval: 10s
       timeout: 5s
       retries: 6

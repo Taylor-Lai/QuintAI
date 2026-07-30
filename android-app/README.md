@@ -26,20 +26,20 @@ Android 客户端基于 Kotlin 与 Jetpack Compose 构建，最低支持 Android
 调试构建默认连接模拟器宿主机：
 
 ```text
-http://10.0.2.2:8000/
+http://10.0.2.2:8000/api/
 ```
 
 可在构建阶段通过参数覆盖默认地址：
 
 ```powershell
-./gradlew.bat :app:assembleDebug -PdebugApiBaseUrl=http://127.0.0.1:8000/
+./gradlew.bat :app:assembleDebug -PdebugApiBaseUrl=http://127.0.0.1:8000/api/
 ```
 
 URL 必须包含结尾的 `/`。正式构建使用 `apiBaseUrl`，并要求 HTTPS。
 
 ## 模拟器联调
 
-1. 在电脑启动后端并确认 `/health/ready`；
+1. 在电脑启动完整的 Docker Compose 服务并确认 `/api/health/ready`；
 2. 在 Android Studio 的 Device Manager 创建或启动模拟器；
 3. 运行 `app`；
 4. 使用测试账号登录并执行一条完整任务。
@@ -53,7 +53,7 @@ URL 必须包含结尾的 `/`。正式构建使用 `apiBaseUrl`，并要求 HTTP
 ```powershell
 adb devices -l
 adb reverse tcp:8000 tcp:8000
-./gradlew.bat :app:assembleDebug -PdebugApiBaseUrl=http://127.0.0.1:8000/
+./gradlew.bat :app:assembleDebug -PdebugApiBaseUrl=http://127.0.0.1:8000/api/
 adb install -r -t ./app/build/outputs/apk/debug/app-debug.apk
 ```
 
@@ -79,6 +79,10 @@ ADB 反向端口仅适用于本地调试。独立于开发主机的持续测试�
 
 自动化检查通过仅表示既定技术用例满足预期，不能替代完整业务验收。发布前仍须人工验证登录、工作台、三类文档任务、任务详情、结果下载、异常提示及会话恢复。
 
+Android 与 Web 共用服务端任务历史和团队模板。终态任务可在详情页删除，企业管理员可将组织文档归档下载为 ZIP；两项操作均直接调用服务端接口，不使用移动端本地副本替代。
+
+“知识与证据中心”支持知识库创建、文档挂载、证据检索、图谱实体与来源查看、实体人工确认，以及依据最新抽取结果重新构建图谱。移动端显示的关系路径和图谱实体均来自服务端持久化数据，原文证据仍是事实核验依据。
+
 ## 正式签名
 
 1. 将 `keystore.properties.example` 复制为 `keystore.properties`；
@@ -86,7 +90,7 @@ ADB 反向端口仅适用于本地调试。独立于开发主机的持续测试�
 3. 使用正式 HTTPS API 构建：
 
 ```powershell
-./gradlew.bat :app:bundleRelease -PapiBaseUrl=https://api.example.com/
+./gradlew.bat :app:bundleRelease -PapiBaseUrl=https://docs.example.com/api/
 ```
 
 `keystore.properties` 和密钥文件已被 Git 忽略。发布密钥丢失可能导致无法升级既有安装包，应使用受控备份并限制访问。

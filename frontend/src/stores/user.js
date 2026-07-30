@@ -8,45 +8,33 @@ import {
   updateProfileApi
 } from '../api/auth'
 
-const TOKEN_KEY = 'sc_token'
 const USER_KEY = 'sc_user'
-const HISTORY_KEY = 'sc_history'
 let heartbeatTimer = null
 
-function getLocalToken() {
-  return localStorage.getItem(TOKEN_KEY) || ''
-}
-
 function getLocalUser() {
-  const userStr = localStorage.getItem(USER_KEY)
-  return userStr ? JSON.parse(userStr) : null
-}
-
-function getLocalHistory() {
-  const historyStr = localStorage.getItem(HISTORY_KEY)
-  return historyStr ? JSON.parse(historyStr) : []
+  try {
+    const userStr = localStorage.getItem(USER_KEY)
+    return userStr ? JSON.parse(userStr) : null
+  } catch {
+    localStorage.removeItem(USER_KEY)
+    return null
+  }
 }
 
 export const useUserStore = defineStore('user', {
   state: () => ({
-    token: getLocalToken(),
     userInfo: getLocalUser(),
-    historyList: getLocalHistory(),
-    loading: false
+    loading: false,
+    sessionChecked: false
   }),
 
   getters: {
-    isLogin: (state) => !!state.token,
+    isLogin: (state) => !!state.userInfo,
     username: (state) => state.userInfo?.username || '',
     email: (state) => state.userInfo?.email || ''
   },
 
   actions: {
-    setToken(token) {
-      this.token = token
-      localStorage.setItem(TOKEN_KEY, token)
-    },
-
     setUserInfo(userInfo) {
       const mergedUser = {
         avatar: '',
@@ -63,50 +51,10 @@ export const useUserStore = defineStore('user', {
       localStorage.setItem(USER_KEY, JSON.stringify(mergedUser))
     },
 
-    setHistoryList(list) {
-      this.historyList = list
-      localStorage.setItem(HISTORY_KEY, JSON.stringify(list))
-    },
-
-    addHistoryRecord(record) {
-      const newRecord = {
-        id: Date.now(),
-        fileName: record.fileName || '未知文件',
-        type: record.type || '未知类型',
-        time: record.time || new Date().toLocaleString(),
-        status: record.status || '处理完成',
-        summary: record.summary || ''
-      }
-
-      const nextList = [newRecord, ...this.historyList]
-      this.setHistoryList(nextList)
-    },
-
-    // updateProfile(payload) {
-    //   if (!this.userInfo) return
-
-    //   this.userInfo = {
-    //     ...this.userInfo,
-    //     ...payload
-    //   }
-
-    //   localStorage.setItem(USER_KEY, JSON.stringify(this.userInfo))
-    // },
-
-    updateAvatar(avatarBase64) {
-      if (!this.userInfo) return
-      this.userInfo.avatar = avatarBase64
-      localStorage.setItem(USER_KEY, JSON.stringify(this.userInfo))
-    },
-
     clearUser() {
       this.stopHeartbeat()
-      this.token = ''
       this.userInfo = null
-      this.historyList = []
-      localStorage.removeItem(TOKEN_KEY)
       localStorage.removeItem(USER_KEY)
-      localStorage.removeItem(HISTORY_KEY)
     },
 
     async loginAction(payload) {
@@ -114,18 +62,12 @@ export const useUserStore = defineStore('user', {
       try {
         const res = await loginApi(payload)
         // 按后端返回结构取值
-        const token = res.access_token
         const user = res.user_info
-
-        if (!token) {
-          throw new Error('登录成功，但未获取到 access_token')
-        }
-
-        this.setToken(token)
 
         if (user) {
           this.setUserInfo(user)
         }
+        this.sessionChecked = true
 
         this.startHeartbeat()
 
@@ -148,15 +90,12 @@ export const useUserStore = defineStore('user', {
 
     async updateProfileAction(payload) {
       const res = await updateProfileApi(payload)
-
-    // 如果后端返回的是更新后的完整用户信息
       if (res && typeof res === 'object' && ('username' in res || 'email' in res || 'nickname' in res)) {
         this.setUserInfo({
           ...this.userInfo,
           ...res
         })
       } else {
-    // 如果后端只返回成功消息，就用本次提交的数据先合并到本地
         this.setUserInfo({
           ...this.userInfo,
           ...payload
@@ -173,9 +112,23 @@ export const useUserStore = defineStore('user', {
       return res.data || res
     },
 
+    async initializeSession() {
+      if (this.sessionChecked) return this.userInfo
+      try {
+        const user = await this.getProfileAction()
+        this.startHeartbeat()
+        return user
+      } catch {
+        this.clearUser()
+        return null
+      } finally {
+        this.sessionChecked = true
+      }
+    },
+
     async logoutAction() {
       try {
-        if (this.token) await logoutApi()
+        if (this.userInfo) await logoutApi()
       } finally {
         this.clearUser()
       }
@@ -183,7 +136,7 @@ export const useUserStore = defineStore('user', {
 
     startHeartbeat() {
       this.stopHeartbeat()
-      if (!this.token) return
+      if (!this.userInfo) return
       heartbeatApi().catch(() => {})
       heartbeatTimer = window.setInterval(() => {
         heartbeatApi().catch(() => {})

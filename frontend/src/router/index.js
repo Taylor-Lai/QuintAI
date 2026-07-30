@@ -133,8 +133,9 @@ const router = createRouter({
   routes
 })
 
-router.beforeEach((to, from, next) => {
+router.beforeEach(async (to, from, next) => {
   const userStore = useUserStore(pinia)
+  await userStore.initializeSession()
 
   if (to.meta.requiresAuth && !userStore.isLogin) {
     next('/auth')

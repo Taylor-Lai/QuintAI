@@ -1,0 +1,11 @@
+services:
+  gateway:
+    environment:
+      NGINX_SERVER_NAME: ${NGINX_SERVER_NAME:?NGINX_SERVER_NAME must be set}
+    volumes:
+      - ./deploy/nginx/https.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ${TLS_CERT_DIR:?TLS_CERT_DIR must be set}/fullchain.pem:/etc/nginx/certs/fullchain.pem:ro
+      - ${TLS_CERT_DIR:?TLS_CERT_DIR must be set}/privkey.pem:/etc/nginx/certs/privkey.pem:ro
+    ports:
+      - "80:80"
+      - "443:443"

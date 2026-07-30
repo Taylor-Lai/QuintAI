@@ -19,24 +19,47 @@ docker compose ps
 
 服务说明：
 
-- `app`：执行数据库迁移，提供 FastAPI、OpenAPI 和编译后的 Web；
+- `gateway`：提供 Vue Web、统一 `/api/` 入口、反向代理、安全响应头和静态资源缓存；
+- `app`：执行数据库迁移并提供仅限容器网络访问的 FastAPI；
 - `worker`：执行 AI、文档与表格任务；
 - `scheduler`：扫描到期的定时工作流并投递任务；
 - `postgres`：保存用户、任务、文档元数据与企业数据；
 - `redis`：任务队列与结果后端；
+- 生产 API 同时使用 Redis 保存跨实例限流计数；Redis 异常时登录、注册与 AI 上传端点将返回 `503`，不得通过关闭限流绕过故障；
 - `prometheus`：可选监控服务，通过 `monitoring` profile 启动。
 
 ## 健康检查
 
-- `GET /health/live`：API 进程存活；
-- `GET /health/ready`：PostgreSQL 与 Redis 已就绪；
-- `GET /health`：基础服务信息；
-- `GET /metrics`：Prometheus 指标。
+- `GET /nginx-health`：Nginx 网关存活；
+- `GET /api/health/live`：API 进程存活；
+- `GET /api/health/ready`：PostgreSQL 与 Redis 已就绪；
+- `GET /api/health`：基础服务信息；
+- `GET /api/metrics`：Prometheus 指标。
 
 ```powershell
-Invoke-RestMethod http://127.0.0.1:8000/health/ready
-docker compose logs --tail 200 app worker scheduler
+Invoke-RestMethod http://127.0.0.1:8000/nginx-health
+Invoke-RestMethod http://127.0.0.1:8000/api/health/ready
+docker compose logs --tail 200 gateway app worker scheduler
 ```
+
+## HTTPS 网关
+
+默认 Compose 在 `HTTP_PORT`（默认 `8000`）提供 HTTP，适用于本地验收。公网单机部署应准备受信任证书，并在 `.env` 中配置：
+
+```dotenv
+HTTP_PORT=80
+NGINX_SERVER_NAME=docs.example.com
+NGINX_CLIENT_MAX_BODY_SIZE=30m
+TLS_CERT_DIR=/absolute/path/to/certificates
+```
+
+证书目录必须包含 `fullchain.pem` 和 `privkey.pem`，随后启动 HTTPS 覆盖配置：
+
+```powershell
+docker compose -f compose.yaml -f deploy/nginx/compose.https.yaml up --build -d
+```
+
+该配置将 HTTP 重定向至 HTTPS，在 `443` 端口启用 TLS 1.2/1.3、HTTP/2 与 HSTS。若云负载均衡、Kubernetes Ingress 或 CDN 已负责 TLS 终止，可继续使用基础 Compose，并确保 Nginx HTTP 端口只对上游网关开放。
 
 ## 数据库迁移与升级
 
@@ -59,6 +82,12 @@ docker compose exec app alembic current
 ```
 
 恢复操作会覆盖当前数据库，必须在维护窗口执行，并确保目标环境和备份版本匹配。任务文件卷需要使用独立的文件或快照备份策略。
+
+企业控制台创建并下载的是当前组织的文档归档，用于业务文件导出，不等同于 PostgreSQL 全量备份。数据库灾难恢复仍须使用本节脚本或基础设施快照，并定期执行恢复演练。
+
+Webhook 仅接受 HTTPS 公网端点，不允许本地、保留或内网字面地址。生产网络还应配置出站防火墙或代理，仅放行经批准的回调目标，以形成独立于应用校验的 SSRF 防护边界。投递队列异常会记录为失败并由调度器恢复，不应通过删除投递记录掩盖故障。
+
+组织套餐不能由组织所有者自行提升。平台管理员通过受管理员鉴权保护的 `PUT /api/enterprise/subscription` 提交目标 `organization_id` 与套餐标识；变更会更新组织配额并写入审计日志。计费或合同系统应在完成授权后调用该接口，不得让客户端直接模拟支付成功。
 
 ## 监控
 

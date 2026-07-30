@@ -37,7 +37,7 @@
       <section class="recommend-card">
         <div class="section-head">
           <div>
-            <div class="section-title">热门推荐</div>
+            <div class="section-title">推荐模板</div>
             <div class="section-subtitle">精选高频业务模板，点击即可预览</div>
           </div>
           <button class="text-btn" @click="openAllTemplates()">查看全部</button>
@@ -45,13 +45,12 @@
 
         <div class="recommend-grid">
           <div
-            v-for="item in hotTemplates"
+            v-for="item in recommendedTemplates"
             :key="item.id"
             class="recommend-item"
           >
             <div class="recommend-top">
               <span class="recommend-tag">{{ item.category }}</span>
-              <span class="recommend-hot">{{ item.isHot ? '最热' : '热门' }}</span>
             </div>
 
             <div class="recommend-name">{{ item.name }}</div>
@@ -177,29 +176,6 @@
             </button>
           </div>
 
-          <div class="sort-list">
-            <button
-              class="sort-btn"
-              :class="{ active: sortType === 'default' }"
-              @click="sortType = 'default'"
-            >
-              默认排序
-            </button>
-            <button
-              class="sort-btn"
-              :class="{ active: sortType === 'hot' }"
-              @click="sortType = 'hot'"
-            >
-              最热
-            </button>
-            <button
-              class="sort-btn"
-              :class="{ active: sortType === 'likes' }"
-              @click="sortType = 'likes'"
-            >
-              点赞数最多
-            </button>
-          </div>
         </div>
 
         <div v-if="filteredTemplates.length" class="popup-template-grid">
@@ -217,8 +193,7 @@
               <div class="template-title-row">
                 <div class="template-name-row">
                   <div class="template-name">{{ item.name }}</div>
-                  <span v-if="item.isHot" class="top-hot-badge">最热</span>
-                  <span v-if="item.source === 'local'" class="local-badge">本地上传</span>
+                  <span v-if="item.source === 'custom'" class="local-badge">团队模板</span>
                 </div>
                 <span class="template-scene">{{ item.scene }}</span>
               </div>
@@ -256,20 +231,6 @@
                   使用
                 </button>
 
-                <div class="action-stats">
-                  <button
-                    class="stat-icon-btn like-btn"
-                    title="点赞"
-                    @click="increaseLikes(item)"
-                  >
-                    <span class="stat-icon">👍</span>
-                    <span class="stat-count">{{ item.likes }}</span>
-                  </button>
-                  <span class="stat-icon-btn comment-btn" title="评论">
-                    <span class="stat-icon">💬</span>
-                    <span class="stat-count">{{ item.comments }}</span>
-                  </span>
-                </div>
               </div>
             </div>
           </div>
@@ -306,9 +267,7 @@
               <div class="info-line"><span>字段数：</span>{{ currentTemplate?.fields }}</div>
               <div class="info-line"><span>输出格式：</span>{{ currentTemplate?.format }}</div>
               <div class="info-line"><span>适用场景：</span>{{ currentTemplate?.scene }}</div>
-              <div class="info-line"><span>点赞数：</span>{{ currentTemplate?.likes }}</div>
-              <div class="info-line"><span>评论数：</span>{{ currentTemplate?.comments }}</div>
-              <div class="info-line"><span>来源：</span>{{ currentTemplate?.source === 'local' ? '本地上传' : '系统内置' }}</div>
+              <div class="info-line"><span>来源：</span>{{ currentTemplate?.source === 'custom' ? '团队模板' : '系统内置' }}</div>
             </div>
 
             <div class="preview-block">
@@ -351,20 +310,6 @@
             使用该模板
           </button>
 
-          <div class="action-stats preview-action-stats">
-            <button
-              class="stat-icon-btn like-btn"
-              title="点赞"
-              @click="increaseLikes(currentTemplate)"
-            >
-              <span class="stat-icon">👍</span>
-              <span class="stat-count">{{ currentTemplate?.likes || 0 }}</span>
-            </button>
-            <span class="stat-icon-btn comment-btn" title="评论">
-              <span class="stat-icon">💬</span>
-              <span class="stat-count">{{ currentTemplate?.comments || 0 }}</span>
-            </span>
-          </div>
         </div>
       </div>
     </div>
@@ -375,350 +320,27 @@
 import { computed, ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { downloadExcel } from '../utils/excel'
+import { getTemplates } from '../api/enterprise'
 import AppHeader from '../components/AppHeader.vue'
 
 const router = useRouter()
 
-const TEMPLATE_LIBRARY_STORAGE_KEY = 'local_template_library_v1'
 const ACTIVE_TEMPLATE_STORAGE_KEY = 'active_template_for_table_fill_v1'
 const EDIT_TEMPLATE_STORAGE_KEY = 'active_template_for_editor_v1'
 
 const keyword = ref('')
 const activeCategory = ref('全部')
-const sortType = ref('default')
 const previewVisible = ref(false)
 const allTemplatesVisible = ref(false)
 const currentTemplate = ref(null)
 const uploadedTemplates = ref([])
 
-const builtinTemplates = ref([
-  {
-    id: 1,
-    name: '合同信息登记表',
-    shortName: '合',
-    category: '行政办公',
-    scene: '合同管理',
-    description: '适用于合同基础信息登记、审批流转及归档管理，便于统一维护合同状态和关键条款。',
-    fields: 12,
-    format: 'Excel / 在线表单',
-    tags: ['合同', '登记', '审批'],
-    likes: 128,
-    comments: 26,
-    isHot: true,
-    source: 'builtin',
-    fieldList: ['合同编号', '合同名称', '甲方', '乙方', '签订日期', '到期日期', '金额', '负责人', '审批状态', '归档编号', '备注', '附件说明']
-  },
-  {
-    id: 2,
-    name: '员工入职信息表',
-    shortName: '入',
-    category: '人事管理',
-    scene: '员工档案',
-    description: '用于员工入职基础信息采集，支持身份信息、岗位信息和联系方式统一录入。',
-    fields: 15,
-    format: 'Excel / 在线表单',
-    tags: ['人事', '入职', '员工'],
-    likes: 165,
-    comments: 35,
-    isHot: true,
-    source: 'builtin',
-    fieldList: ['姓名', '性别', '身份证号', '手机号', '邮箱', '部门', '岗位', '入职日期', '工号', '紧急联系人', '联系地址', '学历', '毕业院校', '开户行', '银行卡号']
-  },
-  {
-    id: 3,
-    name: '费用报销申请表',
-    shortName: '报',
-    category: '财务管理',
-    scene: '费用报销',
-    description: '适合日常差旅、办公采购、项目支出等报销场景，支持票据和说明字段配置。',
-    fields: 10,
-    format: 'Excel / 在线表单',
-    tags: ['财务', '报销', '审批'],
-    likes: 186,
-    comments: 40,
-    isHot: true,
-    source: 'builtin',
-    fieldList: ['申请人', '部门', '报销事由', '费用类型', '金额', '发生日期', '票据数量', '审批人', '支付方式', '备注']
-  },
-  {
-    id: 4,
-    name: '采购申请汇总表',
-    shortName: '采',
-    category: '供应链',
-    scene: '采购审批',
-    description: '用于物资、设备、耗材等采购需求申请和汇总，便于采购流程标准化管理。',
-    fields: 11,
-    format: 'Excel / 在线表单',
-    tags: ['采购', '审批', '物资'],
-    likes: 96,
-    comments: 18,
-    isHot: false,
-    source: 'builtin',
-    fieldList: ['申请部门', '申请人', '物品名称', '规格型号', '数量', '预算金额', '用途说明', '申请日期', '供应商建议', '到货日期', '审批意见']
-  },
-  {
-    id: 5,
-    name: '会议签到登记表',
-    shortName: '会',
-    category: '行政办公',
-    scene: '活动签到',
-    description: '适用于会议、培训、活动现场签到，支持参会人信息快速采集与统计。',
-    fields: 8,
-    format: 'Excel / 在线表单',
-    tags: ['会议', '签到', '统计'],
-    likes: 78,
-    comments: 12,
-    isHot: false,
-    source: 'builtin',
-    fieldList: ['会议名称', '姓名', '单位', '部门', '职务', '手机号', '签到时间', '签字']
-  },
-  {
-    id: 6,
-    name: '学生成绩登记表',
-    shortName: '成',
-    category: '教育场景',
-    scene: '成绩管理',
-    description: '适用于课程成绩录入与汇总，支持多维度字段扩展和期末成绩导出。',
-    fields: 9,
-    format: 'Excel / 在线表单',
-    tags: ['教育', '成绩', '登记'],
-    likes: 88,
-    comments: 16,
-    isHot: false,
-    source: 'builtin',
-    fieldList: ['学号', '姓名', '班级', '课程名称', '平时成绩', '期中成绩', '期末成绩', '总评成绩', '教师评语']
-  },
-  {
-    id: 7,
-    name: '病历信息采集表',
-    shortName: '病',
-    category: '医疗场景',
-    scene: '病历整理',
-    description: '用于从病历文档中提取患者基本信息、诊断结果及检查信息并完成结构化填写。',
-    fields: 14,
-    format: 'Excel / 在线表单',
-    tags: ['医疗', '病历', '采集'],
-    likes: 110,
-    comments: 22,
-    isHot: true,
-    source: 'builtin',
-    fieldList: ['姓名', '性别', '年龄', '住院号', '科室', '主诉', '既往史', '诊断结果', '检查结论', '治疗方案', '入院日期', '出院日期', '主治医生', '备注']
-  },
-  {
-    id: 8,
-    name: '项目进度跟踪表',
-    shortName: '项',
-    category: '项目管理',
-    scene: '进度管理',
-    description: '适合团队项目的阶段任务跟踪、负责人分配与完成状态记录。',
-    fields: 13,
-    format: 'Excel / 在线表单',
-    tags: ['项目', '进度', '跟踪'],
-    likes: 154,
-    comments: 30,
-    isHot: true,
-    source: 'builtin',
-    fieldList: ['项目名称', '阶段名称', '任务名称', '负责人', '开始时间', '截止时间', '完成状态', '优先级', '风险说明', '依赖项', '成果物', '更新时间', '备注']
-  },
-  {
-    id: 9,
-    name: '固定资产登记表',
-    shortName: '资',
-    category: '财务管理',
-    scene: '资产管理',
-    description: '用于办公设备、固定资产统一编号、入库、领用和盘点管理。',
-    fields: 12,
-    format: 'Excel / 在线表单',
-    tags: ['资产', '登记', '盘点'],
-    likes: 99,
-    comments: 19,
-    isHot: false,
-    source: 'builtin',
-    fieldList: ['资产编号', '资产名称', '类别', '规格型号', '购置日期', '原值', '使用部门', '责任人', '存放地点', '状态', '盘点日期', '备注']
-  },
-  {
-    id: 10,
-    name: '请假申请单',
-    shortName: '假',
-    category: '人事管理',
-    scene: '请假审批',
-    description: '适用于事假、病假、年假等请假申请及审批流程管理。',
-    fields: 9,
-    format: 'Excel / 在线表单',
-    tags: ['请假', '审批', '考勤'],
-    likes: 142,
-    comments: 28,
-    isHot: true,
-    source: 'builtin',
-    fieldList: ['申请人', '部门', '请假类型', '开始时间', '结束时间', '请假天数', '请假事由', '审批人', '审批结果']
-  },
-  {
-    id: 11,
-    name: '加班申请表',
-    shortName: '班',
-    category: '人事管理',
-    scene: '加班管理',
-    description: '适合员工加班登记、审核与统计汇总。',
-    fields: 8,
-    format: 'Excel / 在线表单',
-    tags: ['加班', '考勤', '审批'],
-    likes: 93,
-    comments: 17,
-    isHot: false,
-    source: 'builtin',
-    fieldList: ['申请人', '部门', '加班日期', '开始时间', '结束时间', '加班时长', '加班事由', '审批意见']
-  },
-  {
-    id: 12,
-    name: '客户拜访记录表',
-    shortName: '客',
-    category: '市场销售',
-    scene: '客户跟进',
-    description: '用于销售、商务人员进行客户拜访、回访与商机跟踪记录。',
-    fields: 11,
-    format: 'Excel / 在线表单',
-    tags: ['客户', '销售', '拜访'],
-    likes: 131,
-    comments: 25,
-    isHot: false,
-    source: 'builtin',
-    fieldList: ['客户名称', '联系人', '联系电话', '拜访日期', '拜访地点', '拜访人', '沟通主题', '客户需求', '下步计划', '合作意向', '备注']
-  },
-  {
-    id: 13,
-    name: '售后服务登记表',
-    shortName: '售',
-    category: '市场销售',
-    scene: '售后处理',
-    description: '适用于售后问题登记、跟踪处理和满意度回访。',
-    fields: 10,
-    format: 'Excel / 在线表单',
-    tags: ['售后', '服务', '登记'],
-    likes: 84,
-    comments: 13,
-    isHot: false,
-    source: 'builtin',
-    fieldList: ['客户名称', '产品名称', '问题描述', '报修时间', '处理人员', '处理进度', '解决时间', '处理结果', '满意度', '备注']
-  },
-  {
-    id: 14,
-    name: '来访人员登记表',
-    shortName: '访',
-    category: '行政办公',
-    scene: '访客管理',
-    description: '适合前台访客登记、安全管理和来访信息留存。',
-    fields: 9,
-    format: 'Excel / 在线表单',
-    tags: ['来访', '登记', '安保'],
-    likes: 69,
-    comments: 10,
-    isHot: false,
-    source: 'builtin',
-    fieldList: ['姓名', '单位', '来访事由', '被访人', '联系电话', '证件号码', '到访时间', '离开时间', '备注']
-  },
-  {
-    id: 15,
-    name: '培训签到反馈表',
-    shortName: '训',
-    category: '教育场景',
-    scene: '培训管理',
-    description: '适用于企业内训、课程签到及培训反馈收集。',
-    fields: 10,
-    format: 'Excel / 在线表单',
-    tags: ['培训', '签到', '反馈'],
-    likes: 105,
-    comments: 21,
-    isHot: false,
-    source: 'builtin',
-    fieldList: ['培训主题', '讲师', '参训人', '部门', '签到时间', '课程评分', '内容评价', '意见建议', '是否通过', '备注']
-  },
-  {
-    id: 16,
-    name: '门诊登记信息表',
-    shortName: '诊',
-    category: '医疗场景',
-    scene: '门诊登记',
-    description: '适用于门诊患者基础信息登记和挂号信息留档。',
-    fields: 11,
-    format: 'Excel / 在线表单',
-    tags: ['门诊', '挂号', '登记'],
-    likes: 117,
-    comments: 23,
-    isHot: false,
-    source: 'builtin',
-    fieldList: ['姓名', '性别', '年龄', '身份证号', '联系方式', '挂号科室', '医生姓名', '就诊日期', '病情描述', '诊疗建议', '备注']
-  },
-  {
-    id: 17,
-    name: '仓库出入库登记表',
-    shortName: '库',
-    category: '供应链',
-    scene: '库存管理',
-    description: '适用于仓储物资出库、入库、盘点及库存台账维护。',
-    fields: 12,
-    format: 'Excel / 在线表单',
-    tags: ['仓库', '库存', '出入库'],
-    likes: 136,
-    comments: 24,
-    isHot: true,
-    source: 'builtin',
-    fieldList: ['单据编号', '物料名称', '规格型号', '单位', '入库数量', '出库数量', '库存结余', '操作类型', '仓库位置', '经办人', '日期', '备注']
-  },
-  {
-    id: 18,
-    name: '招标报名信息表',
-    shortName: '招',
-    category: '供应链',
-    scene: '招标管理',
-    description: '用于供应商报名、资格初审和招标项目台账管理。',
-    fields: 10,
-    format: 'Excel / 在线表单',
-    tags: ['招标', '供应商', '报名'],
-    likes: 82,
-    comments: 14,
-    isHot: false,
-    source: 'builtin',
-    fieldList: ['项目名称', '供应商名称', '联系人', '联系电话', '邮箱', '报名时间', '资质情况', '投标状态', '审核结果', '备注']
-  },
-  {
-    id: 19,
-    name: '预算编制汇总表',
-    shortName: '预',
-    category: '财务管理',
-    scene: '预算管理',
-    description: '适合部门年度预算、项目预算及费用预测汇总。',
-    fields: 11,
-    format: 'Excel / 在线表单',
-    tags: ['预算', '财务', '汇总'],
-    likes: 123,
-    comments: 22,
-    isHot: false,
-    source: 'builtin',
-    fieldList: ['年度', '部门', '项目名称', '费用类别', '预算金额', '实际金额', '差异金额', '编制人', '审核人', '更新时间', '备注']
-  },
-  {
-    id: 20,
-    name: '任务派发表',
-    shortName: '任',
-    category: '项目管理',
-    scene: '任务分配',
-    description: '适用于团队任务拆解、责任到人和协作执行。',
-    fields: 10,
-    format: 'Excel / 在线表单',
-    tags: ['任务', '分配', '执行'],
-    likes: 147,
-    comments: 29,
-    isHot: true,
-    source: 'builtin',
-    fieldList: ['任务编号', '任务名称', '所属项目', '负责人', '参与人', '开始时间', '截止时间', '优先级', '状态', '备注']
-  }
-])
-
+const builtinTemplates = ref([])
 const getShortName = (name = '') => {
   return String(name).trim().slice(0, 1) || '模'
 }
 
-const normalizeLocalTemplate = (item, index = 0) => {
+const normalizeTemplate = (item, index = 0) => {
   const rawFields = Array.isArray(item.fields) ? item.fields : []
   const fieldList = rawFields.map((field, i) => {
     if (typeof field === 'string') return field
@@ -726,39 +348,32 @@ const normalizeLocalTemplate = (item, index = 0) => {
   })
 
   return {
-    id: item.id || `local_${Date.now()}_${index}`,
+    id: item.id || `template_${Date.now()}_${index}`,
     name: item.name || '未命名模板',
     shortName: getShortName(item.name),
     category: item.category || '自定义分类',
     scene: item.scene || '在线编辑',
-    description: item.description || `本地上传模板：${item.name || '未命名模板'}`,
+    description: item.description || `团队模板：${item.name || '未命名模板'}`,
     fields: fieldList.length,
     format: item.format || 'Excel / 在线表单',
-    tags: Array.isArray(item.tags) && item.tags.length ? item.tags : ['本地上传'],
-    likes: Number(item.likes || 0),
-    comments: Number(item.comments || 0),
-    isHot: Boolean(item.isHot),
-    source: 'local',
+    tags: Array.isArray(item.tags) && item.tags.length ? item.tags : ['团队模板'],
+    source: item.source || 'custom',
+    editable: Boolean(item.editable),
     fieldList,
     rawFields,
     createdAt: item.createdAt || Date.now()
   }
 }
 
-const loadUploadedTemplates = () => {
-  const raw = localStorage.getItem(TEMPLATE_LIBRARY_STORAGE_KEY)
-  if (!raw) {
-    uploadedTemplates.value = []
-    return
-  }
-
+const loadUploadedTemplates = async () => {
   try {
-    const parsed = JSON.parse(raw)
-    uploadedTemplates.value = Array.isArray(parsed)
-      ? parsed.map((item, index) => normalizeLocalTemplate(item, index))
-      : []
+    const response = await getTemplates()
+    const templates = Array.isArray(response.items) ? response.items.map((item, index) => normalizeTemplate(item, index)) : []
+    builtinTemplates.value = templates.filter((item) => item.source === 'builtin')
+    uploadedTemplates.value = templates.filter((item) => item.source === 'custom')
   } catch (error) {
-    console.error('读取模板库失败：', error)
+    console.error('读取服务端模板库失败：', error)
+    builtinTemplates.value = []
     uploadedTemplates.value = []
   }
 }
@@ -788,19 +403,11 @@ const filteredTemplates = computed(() => {
     return matchCategory && matchKeyword
   })
 
-  if (sortType.value === 'hot') {
-    list = [...list].sort((a, b) => Number(b.isHot) - Number(a.isHot) || b.likes - a.likes)
-  } else if (sortType.value === 'likes') {
-    list = [...list].sort((a, b) => b.likes - a.likes)
-  }
-
   return list
 })
 
-const hotTemplates = computed(() => {
-  return [...templateList.value]
-    .sort((a, b) => Number(b.isHot) - Number(a.isHot) || b.likes - a.likes)
-    .slice(0, 6)
+const recommendedTemplates = computed(() => {
+  return templateList.value.slice(0, 6)
 })
 
 const categorySummary = computed(() => {
@@ -813,7 +420,6 @@ const categorySummary = computed(() => {
 const openAllTemplates = (category = '全部') => {
   activeCategory.value = category
   keyword.value = ''
-  sortType.value = 'default'
   allTemplatesVisible.value = true
 }
 
@@ -894,7 +500,7 @@ const buildTemplatePayloadForEdit = (item) => {
   }
 
   return {
-    id: item.source === 'local' ? item.id : `tpl_${Date.now()}`,
+    id: item.source === 'custom' ? item.id : `tpl_${Date.now()}`,
     originalTemplateId: item.id,
     name: item.name || '',
     category: item.category || '自定义分类',
@@ -902,9 +508,6 @@ const buildTemplatePayloadForEdit = (item) => {
     description: item.description || '',
     format: item.format || 'Excel / 在线表单',
     tags: item.tags || [],
-    likes: Number(item.likes || 0),
-    comments: Number(item.comments || 0),
-    isHot: Boolean(item.isHot),
     createdAt: item.createdAt || Date.now(),
     editMode: true,
     source: item.source || 'builtin',
@@ -939,14 +542,7 @@ const downloadTemplateExcel = async (item) => {
   await downloadExcel(headers, `${item.name || '模板'}.xlsx`)
 }
 
-const increaseLikes = (item) => {
-  if (!item) return
-  item.likes = Number(item.likes || 0) + 1
-}
-
-onMounted(() => {
-  loadUploadedTemplates()
-})
+onMounted(loadUploadedTemplates)
 </script>
 
 <style scoped>
@@ -1159,12 +755,6 @@ onMounted(() => {
   background: rgba(213, 176, 118, 0.14);
   color: #b48742;
   font-size: 12px;
-  font-weight: 600;
-}
-
-.recommend-hot {
-  font-size: 12px;
-  color: #d84f4f;
   font-weight: 600;
 }
 
@@ -1559,41 +1149,6 @@ onMounted(() => {
 
 .preview-action-stats {
   margin-left: 0;
-}
-
-.stat-icon-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 36px;
-  padding: 0;
-  background: transparent;
-  border: none;
-  color: #8b6a32;
-  font-size: 13px;
-  line-height: 1;
-  white-space: nowrap;
-}
-
-.like-btn {
-  cursor: pointer;
-}
-
-.comment-btn {
-  cursor: default;
-}
-
-.like-btn:hover {
-  color: #d84f4f;
-}
-
-.stat-icon {
-  font-size: 16px;
-}
-
-.stat-count {
-  font-weight: 600;
-  color: #7a6a55;
 }
 
 .preview-content {

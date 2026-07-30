@@ -15,8 +15,8 @@
 - 以真实任务节点展示进度、执行时间线、质量报告、失败原因和重试状态；
 - 提供用户认证、任务中心、文档工作台、人工复核、批量审批和演示任务创建能力；
 - 提供组织、成员、角色、审计日志、评论、通知、工作流版本和定时任务；
-- 提供混合检索、知识图谱、API 密钥、签名 Webhook、配额与运行分析；
-- Web 与 Android 原生端共用同一套后端接口和业务数据。
+- 提供证据可追溯的混合检索、持久化知识图谱、API 密钥、签名 Webhook、配额与运行分析；
+- Web 与 Android 原生端共用同一套后端接口、任务历史、团队模板和企业业务数据。
 
 ## 技术架构
 
@@ -59,11 +59,12 @@ docker compose ps
 
 服务就绪后访问：
 
-- Web 与 API：`http://127.0.0.1:8000`
-- OpenAPI：`http://127.0.0.1:8000/docs`
-- 就绪检查：`http://127.0.0.1:8000/health/ready`
+- Web：`http://127.0.0.1:8000`
+- API：`http://127.0.0.1:8000/api/`
+- OpenAPI：`http://127.0.0.1:8000/api/docs`
+- 就绪检查：`http://127.0.0.1:8000/api/health/ready`
 
-Compose 会启动 API、Worker、调度器、PostgreSQL 和 Redis。首次启动及重新构建可能需要下载镜像和依赖。
+Compose 会启动 Nginx 网关、API、Worker、调度器、PostgreSQL 和 Redis。宿主机只公开 Nginx；FastAPI、PostgreSQL 与 Redis 均限制在容器网络中。首次启动及重新构建可能需要下载镜像和依赖。
 
 ## 使用与维护入口
 

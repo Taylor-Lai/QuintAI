@@ -12,7 +12,7 @@ from docnexus.core.settings import get_settings
 from docnexus.db import DocumentRecord, User, get_db
 from docnexus.repositories.extractions import ExtractionRepository
 from docnexus.repositories.tasks import TaskRepository
-from docnexus.services.enterprise import audit, ensure_context
+from docnexus.services.enterprise import audit, ensure_context, ensure_document_capacity, reserve_monthly_run
 from docnexus.services.upload_security import save_upload_safely
 
 router = APIRouter(tags=["信息提取"])
@@ -66,11 +66,23 @@ async def submit_extraction(
     field_list = list(dict.fromkeys(value.strip() for value in fields.replace("，", ",").split(",") if value.strip()))
     if not field_list or len(field_list) > 100:
         raise HTTPException(400, "字段数量必须在 1 到 100 之间")
-    task = TaskRepository.create(db, user.id, "document_extract", {})
-    task.organization_id = context.organization.id
+    task = TaskRepository.create(
+        db,
+        user.id,
+        "document_extract",
+        {},
+        organization_id=context.organization.id,
+        commit=False,
+    )
     workspace = settings.data_dir / "tasks" / task.id
     try:
         path, size = await save_upload_safely(file, workspace / "input", {".docx", ".xlsx", ".txt", ".md"})
+        ensure_document_capacity(
+            db,
+            context,
+            additional_documents=1,
+            additional_bytes=size,
+        )
         document = DocumentRecord(
             id=uuid.uuid4().hex,
             user_id=user.id,
@@ -92,12 +104,12 @@ async def submit_extraction(
             "user_id": user.id,
             "document_id": document.id,
         }
+        reserve_monthly_run(db, context)
         audit(db, context, user, "document.extract.submit", "document", document.id, {"fields": field_list})
         db.commit()
         enqueue(task)
         return serialize_task(task)
     except Exception:
-        db.delete(task)
-        db.commit()
+        db.rollback()
         shutil.rmtree(workspace, ignore_errors=True)
         raise

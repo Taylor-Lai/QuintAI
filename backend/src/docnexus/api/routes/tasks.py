@@ -1,3 +1,5 @@
+import logging
+import shutil
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -5,13 +7,15 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from docnexus.api.dependencies import get_current_user
-from docnexus.db import TaskRecord, User, WorkflowRun, get_db
+from docnexus.core.settings import get_settings
+from docnexus.db import DocumentRecord, TaskRecord, User, WorkflowRun, get_db
 from docnexus.repositories.tasks import TaskRepository
 from docnexus.services.task_progress import report_step, reset_progress, serialize_events
 from docnexus.worker.celery_app import celery_app
 from docnexus.worker.tasks import process_task
 
 router = APIRouter(prefix="/tasks", tags=["任务"])
+logger = logging.getLogger(__name__)
 
 
 def serialize_task(task: TaskRecord, include_events: bool = False) -> dict[str, object]:
@@ -80,6 +84,37 @@ def download_task(task_id: str, db: Session = Depends(get_db), user: User = Depe
     if not path.is_file():
         raise HTTPException(410, "任务结果文件已过期")
     return FileResponse(path, filename=task.output_name)
+
+
+@router.delete("/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_task(task_id: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)) -> None:
+    task = TaskRepository.get_owned(db, task_id, user.id)
+    if task is None:
+        raise HTTPException(404, "任务不存在")
+    if task.status not in {"succeeded", "failed", "cancelled"}:
+        raise HTTPException(409, "运行中的任务不能删除，请先取消任务")
+
+    output_path = Path(task.output_path).resolve() if task.output_path else None
+    data_root = get_settings().data_dir.resolve()
+    task_root = (data_root / "tasks" / task.id).resolve()
+    retained_document = (
+        db.query(DocumentRecord)
+        .filter(DocumentRecord.storage_path.startswith(str(task_root)))
+        .first()
+    )
+    db.delete(task)
+    db.commit()
+
+    if retained_document is None and task_root.is_relative_to(data_root) and task_root.is_dir():
+        try:
+            shutil.rmtree(task_root)
+        except OSError:
+            logger.warning("Unable to remove task workspace after deleting task %s", task_id, exc_info=True)
+    elif output_path and output_path.is_relative_to(data_root) and output_path.is_file():
+        try:
+            output_path.unlink()
+        except OSError:
+            logger.warning("Unable to remove task output after deleting task %s", task_id, exc_info=True)
 
 
 @router.post("/{task_id}/cancel", status_code=status.HTTP_202_ACCEPTED)

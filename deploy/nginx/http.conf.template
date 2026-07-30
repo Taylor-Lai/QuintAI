@@ -1,0 +1,22 @@
+server {
+    listen 80;
+    listen [::]:80;
+    server_name ${NGINX_SERVER_NAME};
+    server_tokens off;
+
+    root /usr/share/nginx/html;
+    index index.html;
+    client_max_body_size ${NGINX_CLIENT_MAX_BODY_SIZE};
+
+    gzip on;
+    gzip_vary on;
+    gzip_min_length 1024;
+    gzip_types text/plain text/css application/json application/javascript image/svg+xml;
+
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+
+    include /etc/nginx/includes/app-locations.conf;
+}

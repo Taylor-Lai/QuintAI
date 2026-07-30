@@ -262,7 +262,7 @@ _DATE_FIELD_TOKENS = ("日期", "时间", "截止", "截至", "date", "time", "d
 
 
 def _is_unicode_missing_value(value: object) -> bool:
-    return value is None or str(value).strip() in {"", "未找到", "鏈壘鍒?", "null", "None"}
+    return value is None or str(value).strip() in {"", "未找到", "null", "None"}
 
 
 def _is_unicode_date_field(field_name: str) -> bool:

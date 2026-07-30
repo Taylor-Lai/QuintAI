@@ -16,11 +16,11 @@ from pathlib import Path
 import redis
 from cryptography.fernet import Fernet
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi.responses import FileResponse
 from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
-from docnexus.ai.knowledge_graph.builder import KnowledgeGraphBuilder
-from docnexus.api.dependencies import get_current_user
+from docnexus.api.dependencies import get_current_user, require_admin
 from docnexus.core.settings import get_settings
 from docnexus.db import (
     ApiCredential,
@@ -30,15 +30,16 @@ from docnexus.db import (
     CollaborationComment,
     DocumentRecord,
     DocumentVersion,
-    ExtractionRecord,
-    KnowledgeChunk,
     KnowledgeCollection,
+    KnowledgeEntity,
     KnowledgeItem,
     Notification,
     Organization,
     OrganizationMember,
     ReviewRecord,
+    Subscription,
     TaskRecord,
+    TemplateDefinition,
     User,
     WebhookDelivery,
     WebhookEndpoint,
@@ -52,17 +53,25 @@ from docnexus.schemas.enterprise import (
     ApiKeyCreate,
     CommentCreate,
     KnowledgeCreate,
+    KnowledgeEntityReview,
     KnowledgeItemCreate,
     MemberCreate,
     MemberUpdate,
     OrganizationUpdate,
     PlanUpdate,
     ScheduleCreate,
+    TemplateUpsert,
     WebhookCreate,
 )
 from docnexus.services.enterprise import PLAN_LIMITS, audit, ensure_context, subscription_for
 from docnexus.services.knowledge import hybrid_search, index_document
+from docnexus.services.knowledge_graph import (
+    graph_context_for_query,
+    rebuild_knowledge_graph,
+    serialize_knowledge_graph,
+)
 from docnexus.services.scheduling import next_cron_time
+from docnexus.services.templates import BUILTIN_TEMPLATES
 from docnexus.services.webhooks import publish_event
 from docnexus.worker.celery_app import celery_app
 
@@ -85,6 +94,23 @@ def _member_data(db: Session, member: OrganizationMember) -> dict:
         "role": member.role,
         "status": member.status,
         "joined_at": member.joined_at,
+    }
+
+
+def _template_data(template: TemplateDefinition) -> dict[str, object]:
+    return {
+        "id": template.id,
+        "name": template.name,
+        "category": template.category,
+        "scene": template.scene,
+        "description": template.description,
+        "format": template.output_format,
+        "tags": template.tags or [],
+        "fields": template.fields_data or [],
+        "source": "custom",
+        "editable": True,
+        "created_at": template.created_at,
+        "updated_at": template.updated_at,
     }
 
 
@@ -391,7 +417,7 @@ def resolve_comment(comment_id: str, db: Session = Depends(get_db), user: User =
     comment = db.query(CollaborationComment).filter_by(id=comment_id, organization_id=context.organization.id).first()
     if comment is None:
         raise HTTPException(404, "评论不存在")
-    comment.resolved = not comment.resolved
+    comment.resolved = True
     audit(db, context, user, "comment.resolve", comment.resource_type, comment.resource_id)
     db.commit()
     return {"id": comment.id, "resolved": comment.resolved}
@@ -655,6 +681,90 @@ def webhook_deliveries(
     ]}
 
 
+@router.get("/templates")
+def list_templates(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    context = ensure_context(db, user)
+    custom = (
+        db.query(TemplateDefinition)
+        .filter_by(organization_id=context.organization.id)
+        .order_by(TemplateDefinition.updated_at.desc())
+        .all()
+    )
+    return {"items": [*BUILTIN_TEMPLATES, *[_template_data(item) for item in custom]]}
+
+
+@router.post("/templates", status_code=201)
+def create_template(
+    payload: TemplateUpsert,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    context = ensure_context(db, user)
+    context.require("member")
+    record = TemplateDefinition(
+        id=uuid.uuid4().hex,
+        organization_id=context.organization.id,
+        owner_id=user.id,
+        name=payload.name,
+        category=payload.category,
+        scene=payload.scene,
+        description=payload.description,
+        output_format=payload.format,
+        tags=payload.tags,
+        fields_data=[
+            field if isinstance(field, dict) else {"label": field, "key": f"field_{index}", "type": "text", "required": False}
+            for index, field in enumerate(payload.fields, start=1)
+        ],
+    )
+    db.add(record)
+    audit(db, context, user, "template.create", "template", record.id)
+    db.commit()
+    db.refresh(record)
+    return _template_data(record)
+
+
+@router.put("/templates/{template_id}")
+def update_template(
+    template_id: str,
+    payload: TemplateUpsert,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    context = ensure_context(db, user)
+    record = db.query(TemplateDefinition).filter_by(id=template_id, organization_id=context.organization.id).first()
+    if record is None:
+        raise HTTPException(404, "模板不存在")
+    if record.owner_id != user.id:
+        context.require("admin")
+    record.name = payload.name
+    record.category = payload.category
+    record.scene = payload.scene
+    record.description = payload.description
+    record.output_format = payload.format
+    record.tags = payload.tags
+    record.fields_data = [
+        field if isinstance(field, dict) else {"label": field, "key": f"field_{index}", "type": "text", "required": False}
+        for index, field in enumerate(payload.fields, start=1)
+    ]
+    audit(db, context, user, "template.update", "template", record.id)
+    db.commit()
+    db.refresh(record)
+    return _template_data(record)
+
+
+@router.delete("/templates/{template_id}", status_code=204)
+def delete_template(template_id: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)) -> None:
+    context = ensure_context(db, user)
+    record = db.query(TemplateDefinition).filter_by(id=template_id, organization_id=context.organization.id).first()
+    if record is None:
+        raise HTTPException(404, "模板不存在")
+    if record.owner_id != user.id:
+        context.require("admin")
+    audit(db, context, user, "template.delete", "template", record.id)
+    db.delete(record)
+    db.commit()
+
+
 @router.get("/knowledge")
 def list_knowledge(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     context = ensure_context(db, user)
@@ -715,9 +825,11 @@ def add_knowledge_document(
     chunks = index_document(db, collection.id, document)
     row = KnowledgeItem(id=uuid.uuid4().hex, collection_id=collection.id, document_id=document.id, chunk_count=chunks)
     db.add(row)
+    db.flush()
+    graph_summary = rebuild_knowledge_graph(db, collection.id)
     audit(db, context, user, "knowledge.document.add", "knowledge", collection.id, {"document_id": document.id})
     db.commit()
-    return {"id": row.id, "document_id": document.id, "status": row.status, "chunk_count": chunks}
+    return {"id": row.id, "document_id": document.id, "status": row.status, "chunk_count": chunks, "graph": graph_summary}
 
 
 @router.get("/knowledge/{collection_id}/search")
@@ -734,11 +846,20 @@ def search_knowledge(
     )
     if collection is None:
         raise HTTPException(404, "知识库不存在")
-    results = hybrid_search(db, collection.id, query, collection.retrieval_mode, limit)
+    graph_context = graph_context_for_query(db, collection.id, query)
+    results = hybrid_search(
+        db, collection.id, query, collection.retrieval_mode, limit, graph_context=graph_context
+    )
     return {
         "query": query,
         "mode": collection.retrieval_mode,
-        "provider": "local_hybrid_vector",
+        "provider": "local_hybrid_evidence_graph",
+        "retrieval": {
+            "lexical_vector": True,
+            "knowledge_graph": bool(graph_context["entities"]),
+            "graph_entities": graph_context["entities"],
+            "graph_paths": graph_context["paths"],
+        },
         "items": results,
     }
 
@@ -782,72 +903,56 @@ def knowledge_graph(
     )
     if collection is None:
         raise HTTPException(404, "知识库不存在")
-    document_ids = [row[0] for row in db.query(KnowledgeItem.document_id).filter_by(collection_id=collection.id).all()]
-    extractions = (
-        db.query(ExtractionRecord).filter(ExtractionRecord.document_id.in_(document_ids)).all() if document_ids else []
+    if db.query(KnowledgeEntity).filter_by(collection_id=collection.id).count() == 0:
+        rebuild_knowledge_graph(db, collection.id)
+        db.commit()
+    return serialize_knowledge_graph(db, collection.id)
+
+
+@router.post("/knowledge/{collection_id}/graph/rebuild")
+def rebuild_graph(
+    collection_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    context = ensure_context(db, user)
+    context.require("member")
+    collection = db.query(KnowledgeCollection).filter_by(
+        id=collection_id, organization_id=context.organization.id
+    ).first()
+    if collection is None:
+        raise HTTPException(404, "知识库不存在")
+    summary = rebuild_knowledge_graph(db, collection.id)
+    audit(db, context, user, "knowledge.graph.rebuild", "knowledge", collection.id, summary)
+    db.commit()
+    return {"collection_id": collection.id, **summary}
+
+
+@router.patch("/knowledge/{collection_id}/graph/entities/{entity_id}")
+def review_graph_entity(
+    collection_id: str,
+    entity_id: str,
+    payload: KnowledgeEntityReview,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    context = ensure_context(db, user)
+    context.require("member")
+    collection = db.query(KnowledgeCollection).filter_by(
+        id=collection_id, organization_id=context.organization.id
+    ).first()
+    entity = db.query(KnowledgeEntity).filter_by(id=entity_id, collection_id=collection_id).first()
+    if collection is None or entity is None:
+        raise HTTPException(404, "知识库或图谱实体不存在")
+    entity.review_status = payload.review_status
+    audit(
+        db, context, user, "knowledge.entity.review", "knowledge_entity", entity.id,
+        {"review_status": payload.review_status},
     )
-    builder = KnowledgeGraphBuilder()
-    entities: dict[str, dict] = {}
-    relations: dict[str, dict] = {}
-    documents = db.query(DocumentRecord).filter(DocumentRecord.id.in_(document_ids)).all() if document_ids else []
-    for document in documents:
-        entity_id = f"document:{document.id}"
-        entities[entity_id] = {
-            "entity_id": entity_id,
-            "entity_type": "文档",
-            "name": document.filename,
-            "attributes": {"file_type": document.file_type, "category": document.category},
-            "source_ids": [document.id],
-            "source_document_id": document.id,
-            "source_filename": document.filename,
-        }
-    chunks = db.query(KnowledgeChunk).filter_by(collection_id=collection.id).all()
-    for chunk in chunks:
-        entity_id = f"chunk:{chunk.id}"
-        source_document = next((item for item in documents if item.id == chunk.document_id), None)
-        entities[entity_id] = {
-            "entity_id": entity_id,
-            "entity_type": "片段",
-            "name": f"片段 {chunk.chunk_index + 1}",
-            "attributes": {"preview": chunk.content[:160], **(chunk.location or {})},
-            "source_ids": [chunk.document_id],
-            "source_document_id": chunk.document_id,
-            "source_filename": source_document.filename if source_document else "未知文档",
-        }
-        relation_id = f"contains:{chunk.document_id}:{chunk.id}"
-        relations[relation_id] = {
-            "relation_id": relation_id,
-            "source_entity_id": f"document:{chunk.document_id}",
-            "target_entity_id": entity_id,
-            "relation_type": "包含",
-            "attributes": {},
-            "source_document_id": chunk.document_id,
-        }
-    for extraction in extractions:
-        graph = builder.from_extraction_result(
-            extraction.extracted_data or {}, graph_id=f"document:{extraction.document_id}"
-        )
-        for entity in graph.entities:
-            item = entity.to_dict()
-            item["source_document_id"] = extraction.document_id
-            source_document = next((row for row in documents if row.id == extraction.document_id), None)
-            item["source_filename"] = source_document.filename if source_document else "未知文档"
-            if entity.entity_type == "文档":
-                item["name"] = item["source_filename"]
-            entities[entity.entity_id] = item
-        for relation in graph.relations:
-            item = relation.to_dict()
-            item["source_document_id"] = extraction.document_id
-            relations[relation.relation_id] = item
+    db.commit()
     return {
-        "collection_id": collection.id,
-        "entities": list(entities.values()),
-        "relations": list(relations.values()),
-        "metadata": {
-            "connected_to_main_pipeline": True,
-            "entity_count": len(entities),
-            "relation_count": len(relations),
-        },
+        "entity_id": entity.id, "name": entity.canonical_name,
+        "entity_type": entity.entity_type, "review_status": entity.review_status,
     }
 
 
@@ -919,29 +1024,48 @@ def delete_schedule(schedule_id: str, db: Session = Depends(get_db), user: User 
 
 
 @router.put("/subscription")
-def change_plan(payload: PlanUpdate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    context = ensure_context(db, user)
-    context.require("owner")
-    subscription = subscription_for(db, context)
+def change_plan(
+    payload: PlanUpdate,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_admin),
+):
+    organization = db.get(Organization, payload.organization_id)
+    if organization is None or organization.status != "active":
+        raise HTTPException(404, "组织空间不存在")
+    subscription = db.query(Subscription).filter_by(organization_id=organization.id).first()
+    if subscription is None:
+        subscription = Subscription(
+            id=uuid.uuid4().hex,
+            organization_id=organization.id,
+            plan=organization.plan,
+            limits=PLAN_LIMITS.get(organization.plan, PLAN_LIMITS["starter"]),
+            usage={"monthly_runs": 0},
+        )
+        db.add(subscription)
+    previous_plan = subscription.plan
     subscription.plan = payload.plan
-    subscription.limits = PLAN_LIMITS[payload.plan]
-    context.organization.plan = payload.plan
-    audit(
-        db,
-        context,
-        user,
-        "subscription.plan.change",
-        "subscription",
-        subscription.id,
-        {"plan": payload.plan, "provider": "manual"},
+    subscription.limits = dict(PLAN_LIMITS[payload.plan])
+    organization.plan = payload.plan
+    db.add(
+        AuditLog(
+            id=uuid.uuid4().hex,
+            organization_id=organization.id,
+            user_id=user.id,
+            action="subscription.plan.change",
+            resource_type="subscription",
+            resource_id=subscription.id,
+            detail={"before": previous_plan, "after": payload.plan, "provider": "platform_admin"},
+            ip_address=request.client.host if request.client else None,
+        )
     )
     db.commit()
     return {
         "plan": subscription.plan,
         "status": subscription.status,
         "limits": subscription.limits,
-        "billing_provider": "manual",
-        "message": "已更新本地套餐；生产收款需配置支付适配器",
+        "billing_provider": "platform_admin",
+        "message": "组织套餐与配额已由平台管理员更新",
     }
 
 
@@ -1106,6 +1230,23 @@ def create_backup(db: Session = Depends(get_db), user: User = Depends(get_curren
         "checksum": checksum,
         "message": "备份包含清单和原始文档；数据库灾备仍应由 PostgreSQL 基础设施负责",
     }
+
+
+@router.get("/backups/{backup_id}/download")
+def download_backup(backup_id: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    context = ensure_context(db, user)
+    context.require("admin")
+    record = (
+        db.query(BackupRecord)
+        .filter_by(id=backup_id, organization_id=context.organization.id, status="completed")
+        .first()
+    )
+    if record is None:
+        raise HTTPException(404, "备份不存在")
+    path = Path(record.storage_path)
+    if not path.is_file():
+        raise HTTPException(410, "备份文件已不可用")
+    return FileResponse(path, filename=f"huiwenrongtong-{record.created_at:%Y%m%d-%H%M%S}.zip")
 
 
 @router.get("/workflow-versions/{workflow_id}")

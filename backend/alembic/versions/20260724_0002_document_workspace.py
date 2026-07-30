@@ -30,10 +30,18 @@ def upgrade() -> None:
     for column in ("user_id", "filename", "file_type", "source", "category", "status"):
         op.create_index(f"ix_document_records_{column}", "document_records", [column])
 
-    op.add_column("extraction_records", sa.Column("document_id", sa.String(32)))
-    op.create_foreign_key(
-        "fk_extraction_records_document_id", "extraction_records", "document_records", ["document_id"], ["id"], ondelete="SET NULL"
-    )
+    # SQLite cannot add a foreign-key constraint with ALTER TABLE.  Batch mode
+    # recreates the table there and emits ordinary ALTER statements on engines
+    # that support them, keeping the migration chain portable.
+    with op.batch_alter_table("extraction_records") as batch_op:
+        batch_op.add_column(sa.Column("document_id", sa.String(32)))
+        batch_op.create_foreign_key(
+            "fk_extraction_records_document_id",
+            "document_records",
+            ["document_id"],
+            ["id"],
+            ondelete="SET NULL",
+        )
     op.create_index("ix_extraction_records_document_id", "extraction_records", ["document_id"])
 
     op.create_table(
@@ -77,6 +85,7 @@ def downgrade() -> None:
     op.drop_table("workflow_definitions")
     op.drop_table("review_records")
     op.drop_index("ix_extraction_records_document_id", table_name="extraction_records")
-    op.drop_constraint("fk_extraction_records_document_id", "extraction_records", type_="foreignkey")
-    op.drop_column("extraction_records", "document_id")
+    with op.batch_alter_table("extraction_records") as batch_op:
+        batch_op.drop_constraint("fk_extraction_records_document_id", type_="foreignkey")
+        batch_op.drop_column("document_id")
     op.drop_table("document_records")

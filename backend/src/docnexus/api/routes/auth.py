@@ -9,6 +9,7 @@ from fastapi import (
     Depends,
     HTTPException,
     Request,
+    Response,
     status,
 )
 from sqlalchemy.orm import Session
@@ -55,6 +56,7 @@ async def register(user_data: UserCreate, db: Session = Depends(get_db)):
 async def login(
     login_data: LoginRequest,
     request: Request,
+    response: Response,
     db: Session = Depends(get_db),
 ):
     """用户登录"""
@@ -87,6 +89,15 @@ async def login(
         data={"sub": user.id, "ver": int(user.token_version or 0)},
         expires_delta=timedelta(minutes=settings.access_token_expire_minutes),
     )
+    response.set_cookie(
+        key="huiwen_session",
+        value=access_token,
+        max_age=settings.access_token_expire_minutes * 60,
+        httponly=True,
+        secure=settings.is_production,
+        samesite="strict",
+        path="/api",
+    )
 
     return {
         "access_token": access_token,
@@ -103,6 +114,7 @@ async def login(
 
 @router.post("/auth/logout")
 async def logout(
+    response: Response,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -111,6 +123,7 @@ async def logout(
     current_user.token_version = int(current_user.token_version or 0) + 1
     db.commit()
     db.refresh(current_user)
+    response.delete_cookie(key="huiwen_session", path="/api", secure=settings.is_production, samesite="strict")
 
     return {
         "code": 200,

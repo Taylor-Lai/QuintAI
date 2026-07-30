@@ -66,11 +66,11 @@ def _has_real_llm_config() -> bool:
 
 def _resolve_task(client, response):
     assert response.status_code == 202, response.text
-    task = client.get(f"/tasks/{response.json()['id']}")
+    task = client.get(f"/api/tasks/{response.json()['id']}")
     assert task.status_code == 200, task.text
     payload = task.json()
     assert payload["status"] == "succeeded", payload
-    return client.get(f"/tasks/{payload['id']}/download") if payload["has_file"] else task
+    return client.get(f"/api/tasks/{payload['id']}/download") if payload["has_file"] else task
 
 
 def _write_doc_extract_source(path: Path) -> None:
@@ -138,11 +138,11 @@ class RealLlmApiAcceptanceTests(unittest.TestCase):
         email = f"api-accept-{uuid.uuid4().hex}@example.com"
         password = "Acceptance-Only-Password-123!"
         register_response = self.client.post(
-            "/auth/register",
+            "/api/auth/register",
             json={"username": f"accept-{uuid.uuid4().hex[:12]}", "email": email, "password": password},
         )
         self.assertEqual(register_response.status_code, 200, register_response.text)
-        login_response = self.client.post("/auth/login", json={"email": email, "password": password})
+        login_response = self.client.post("/api/auth/login", json={"email": email, "password": password})
         self.assertEqual(login_response.status_code, 200, login_response.text)
         self.client.headers.update({"Authorization": f"Bearer {login_response.json()['access_token']}"})
         self.tmp = tempfile.TemporaryDirectory()
@@ -157,7 +157,7 @@ class RealLlmApiAcceptanceTests(unittest.TestCase):
 
         with source.open("rb") as file_obj:
             response = self.client.post(
-                "/doc-extract/upload",
+                "/api/doc-extract/upload",
                 data={"fields": "项目名称,负责人,预算,截止日期"},
                 files={"file": ("project.docx", file_obj, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")},
             )
@@ -184,7 +184,7 @@ class RealLlmApiAcceptanceTests(unittest.TestCase):
         request_text = "请筛选北京市2026年6月1日至2026年6月7日的数据，AQI大于100，按AQI降序取前2，只填写城市、日期、AQI和PM2.5。"
         with template.open("rb") as template_obj, source_xlsx.open("rb") as xlsx_obj, source_txt.open("rb") as txt_obj:
             response = self.client.post(
-                "/table-fill/upload",
+                "/api/table-fill/upload",
                 data={"user_request": request_text},
                 files=[
                     ("template", ("template.xlsx", template_obj, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")),

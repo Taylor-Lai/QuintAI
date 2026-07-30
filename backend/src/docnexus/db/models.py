@@ -455,6 +455,88 @@ class KnowledgeChunk(Base):
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
 
 
+class KnowledgeEntity(Base):
+    """Canonical entity scoped to one knowledge collection."""
+
+    __tablename__ = "knowledge_entities"
+    __table_args__ = (
+        UniqueConstraint("collection_id", "entity_type", "normalized_name", name="uq_knowledge_entity_identity"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    collection_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("knowledge_collections.id", ondelete="CASCADE"), index=True
+    )
+    entity_type: Mapped[str] = mapped_column(String(40), index=True)
+    canonical_name: Mapped[str] = mapped_column(String(255), index=True)
+    normalized_name: Mapped[str] = mapped_column(String(255), index=True)
+    aliases: Mapped[list[str]] = mapped_column(JSON, default=list)
+    attributes: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    confidence: Mapped[float] = mapped_column(default=0.7)
+    review_status: Mapped[str] = mapped_column(String(20), default="unreviewed", index=True)
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
+
+
+class KnowledgeRelation(Base):
+    """Typed, evidence-backed relation between canonical entities."""
+
+    __tablename__ = "knowledge_relations"
+    __table_args__ = (
+        UniqueConstraint(
+            "collection_id", "source_entity_id", "target_entity_id", "relation_type",
+            name="uq_knowledge_relation_identity",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    collection_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("knowledge_collections.id", ondelete="CASCADE"), index=True
+    )
+    source_entity_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("knowledge_entities.id", ondelete="CASCADE"), index=True
+    )
+    target_entity_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("knowledge_entities.id", ondelete="CASCADE"), index=True
+    )
+    relation_type: Mapped[str] = mapped_column(String(60), index=True)
+    confidence: Mapped[float] = mapped_column(default=0.7)
+    attributes: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
+
+
+class KnowledgeEvidence(Base):
+    """Auditable source evidence attached to an entity or relation."""
+
+    __tablename__ = "knowledge_evidence"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    collection_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("knowledge_collections.id", ondelete="CASCADE"), index=True
+    )
+    entity_id: Mapped[str | None] = mapped_column(
+        String(32), ForeignKey("knowledge_entities.id", ondelete="CASCADE"), index=True
+    )
+    relation_id: Mapped[str | None] = mapped_column(
+        String(32), ForeignKey("knowledge_relations.id", ondelete="CASCADE"), index=True
+    )
+    document_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("document_records.id", ondelete="CASCADE"), index=True
+    )
+    chunk_id: Mapped[str | None] = mapped_column(
+        String(32), ForeignKey("knowledge_chunks.id", ondelete="SET NULL"), index=True
+    )
+    extraction_id: Mapped[str | None] = mapped_column(
+        String(32), ForeignKey("extraction_records.id", ondelete="SET NULL"), index=True
+    )
+    field_name: Mapped[str | None] = mapped_column(String(160))
+    snippet: Mapped[str] = mapped_column(Text, default="")
+    location: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    confidence: Mapped[float] = mapped_column(default=0.7)
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+
+
 class AutomationSchedule(Base):
     __tablename__ = "automation_schedules"
 
@@ -494,6 +576,27 @@ class Subscription(Base):
     usage: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     period_start: Mapped[datetime] = mapped_column(default=utcnow)
     period_end: Mapped[datetime | None]
+    updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
+
+
+class TemplateDefinition(Base):
+    """Organization-scoped reusable table template."""
+
+    __tablename__ = "template_definitions"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("organizations.id", ondelete="CASCADE"), index=True
+    )
+    owner_id: Mapped[str] = mapped_column(String(32), ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(120), index=True)
+    category: Mapped[str] = mapped_column(String(80), index=True)
+    scene: Mapped[str] = mapped_column(String(120), default="")
+    description: Mapped[str] = mapped_column(Text, default="")
+    output_format: Mapped[str] = mapped_column(String(80), default="Excel / 在线表单")
+    tags: Mapped[list[str]] = mapped_column(JSON, default=list)
+    fields_data: Mapped[list[dict[str, Any]]] = mapped_column("fields", JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
 
 

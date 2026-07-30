@@ -15,26 +15,10 @@
         <div class="profile-top">
           <div class="avatar-area">
             <div class="avatar-box">
-              <img
-                v-if="userStore.userInfo?.avatar"
-                :src="userStore.userInfo.avatar"
-                alt="avatar"
-                class="avatar-img"
-              />
-              <span v-else class="avatar-text">
+              <span class="avatar-text">
                 {{ avatarText }}
               </span>
             </div>
-
-            <label class="avatar-upload-btn">
-              更换头像
-              <input
-                type="file"
-                accept="image/*"
-                class="hidden-input"
-                @change="handleAvatarChange"
-              />
-            </label>
           </div>
 
           <div class="info-grid">
@@ -136,6 +120,7 @@
                 <input
                   type="checkbox"
                   :value="item.id"
+                  :disabled="!item.deletable"
                   v-model="selectedIds"
                 />
                 <span>选择</span>
@@ -144,6 +129,7 @@
               <button
                 v-else
                 class="item-delete-btn"
+                :disabled="!item.deletable"
                 @click="deleteHistoryItem(item.id)"
               >
                 删除
@@ -191,11 +177,13 @@
 import { computed, reactive, ref, watchEffect, onMounted } from 'vue'
 import AppHeader from '../components/AppHeader.vue'
 import { useUserStore } from '../stores/user'
+import { deleteTask, getTasks } from '../api/tasks'
 
 const userStore = useUserStore()
 const isEditing = ref(false)
 const batchMode = ref(false)
 const selectedIds = ref([])
+const taskItems = ref([])
 
 const form = reactive({
   nickname: '',
@@ -211,7 +199,27 @@ watchEffect(() => {
   form.phone = userStore.userInfo?.phone || ''
 })
 
-const historyList = computed(() => userStore.historyList || [])
+const taskTypeLabels = {
+  doc_chat: '文档智能编辑',
+  document_extract: '信息智能提取',
+  table_fill: '多源表格填充'
+}
+const taskStatusLabels = {
+  queued: '等待执行',
+  running: '正在处理',
+  succeeded: '已完成',
+  failed: '处理失败',
+  cancelled: '已取消'
+}
+const historyList = computed(() => taskItems.value.map((item) => ({
+  id: item.id,
+  fileName: item.filename || item.result?.filename || `任务 ${item.id.slice(0, 8)}`,
+  type: taskTypeLabels[item.kind] || item.kind,
+  time: new Date(item.created_at).toLocaleString(),
+  status: taskStatusLabels[item.status] || item.status,
+  summary: item.error?.message || item.stage || '',
+  deletable: ['succeeded', 'failed', 'cancelled'].includes(item.status)
+})))
 const hasHistory = computed(() => historyList.value.length > 0)
 
 const avatarText = computed(() => {
@@ -230,29 +238,16 @@ const toggleBatchMode = () => {
   }
 }
 
-const syncHistoryList = async (nextList) => {
-  if (typeof userStore.setHistoryList === 'function') {
-    userStore.setHistoryList(nextList)
-  } else {
-    userStore.historyList = nextList
-  }
-
-  if (typeof userStore.saveHistoryList === 'function') {
-    await userStore.saveHistoryList(nextList)
-  } else if (typeof window !== 'undefined') {
-    localStorage.setItem('historyList', JSON.stringify(nextList))
-  }
+const loadHistory = async () => {
+  const response = await getTasks({ limit: 100 })
+  taskItems.value = response.items || []
 }
 
 const deleteHistoryByIds = async (ids) => {
   if (!ids.length) return
 
-  if (typeof userStore.deleteHistoryAction === 'function') {
-    await userStore.deleteHistoryAction(ids)
-  } else {
-    const nextList = historyList.value.filter((item) => !ids.includes(item.id))
-    await syncHistoryList(nextList)
-  }
+  await Promise.all(ids.map((id) => deleteTask(id)))
+  await loadHistory()
 }
 
 const deleteHistoryItem = async (id) => {
@@ -297,11 +292,7 @@ const deleteAllHistory = async () => {
   if (!confirmed) return
 
   try {
-    if (typeof userStore.clearHistoryAction === 'function') {
-      await userStore.clearHistoryAction()
-    } else {
-      await syncHistoryList([])
-    }
+    await deleteHistoryByIds(historyList.value.filter((item) => item.deletable).map((item) => item.id))
 
     selectedIds.value = []
     batchMode.value = false
@@ -329,22 +320,12 @@ const saveProfile = async () => {
 
 onMounted(async () => {
   try {
-    await userStore.getProfileAction()
+    await Promise.all([userStore.getProfileAction(), loadHistory()])
   } catch (error) {
     alert(error.message || '获取个人信息失败')
   }
 })
 
-const handleAvatarChange = (event) => {
-  const file = event.target.files?.[0]
-  if (!file) return
-
-  const reader = new FileReader()
-  reader.onload = () => {
-    userStore.updateAvatar(reader.result)
-  }
-  reader.readAsDataURL(file)
-}
 </script>
 
 <style scoped>
@@ -464,33 +445,10 @@ const handleAvatarChange = (event) => {
   overflow: hidden;
 }
 
-.avatar-img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
 .avatar-text {
   font-size: 42px;
   font-weight: 700;
   color: #d5b076;
-}
-
-.avatar-upload-btn {
-  height: 40px;
-  padding: 0 18px;
-  border-radius: 20px;
-  background: #d5b076;
-  color: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  font-size: 14px;
-}
-
-.hidden-input {
-  display: none;
 }
 
 .info-grid {

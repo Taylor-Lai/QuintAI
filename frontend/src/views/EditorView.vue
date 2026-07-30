@@ -216,11 +216,11 @@
 import { computed, ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { downloadExcel } from '../utils/excel'
+import { createTemplate, updateTemplate } from '../api/enterprise'
 import AppHeader from '../components/AppHeader.vue'
 
 const router = useRouter()
 
-const TEMPLATE_LIBRARY_STORAGE_KEY = 'local_template_library_v1'
 const EDIT_TEMPLATE_STORAGE_KEY = 'active_template_for_editor_v1'
 
 const uploading = ref(false)
@@ -253,7 +253,7 @@ const createDefaultTemplate = () => ({
 })
 
 const templateForm = ref(createDefaultTemplate())
-const tagsInput = ref('本地上传, 自定义模板')
+const tagsInput = ref('团队模板, 自定义模板')
 
 const parsedTags = computed(() => {
   return tagsInput.value
@@ -281,7 +281,7 @@ const resetTemplate = () => {
   localStorage.removeItem(EDIT_TEMPLATE_STORAGE_KEY)
   isEditMode.value = false
   templateForm.value = createDefaultTemplate()
-  tagsInput.value = '本地上传, 自定义模板'
+  tagsInput.value = '团队模板, 自定义模板'
 }
 
 const buildUploadPayload = () => {
@@ -293,12 +293,9 @@ const buildUploadPayload = () => {
     scene: templateForm.value.scene || '在线编辑',
     description:
       templateForm.value.description ||
-      `本地上传模板：${templateForm.value.name || '未命名模板'}`,
+      `团队模板：${templateForm.value.name || '未命名模板'}`,
     format: templateForm.value.format || 'Excel / 在线表单',
-    tags: parsedTags.value.length ? parsedTags.value : ['本地上传'],
-    likes: Number(templateForm.value.likes || 0),
-    comments: Number(templateForm.value.comments || 0),
-    isHot: Boolean(templateForm.value.isHot),
+    tags: parsedTags.value.length ? parsedTags.value : ['团队模板'],
     fields: templateForm.value.fields.map((field, index) => ({
       id: field.id || `field_${index + 1}`,
       label: field.label || `字段${index + 1}`,
@@ -373,37 +370,20 @@ const uploadTemplateToLibrary = async () => {
     uploading.value = true
 
     const uploadItem = buildUploadPayload()
-    const raw = localStorage.getItem(TEMPLATE_LIBRARY_STORAGE_KEY)
-
-    let libraryList = []
-
-    try {
-      const parsed = raw ? JSON.parse(raw) : []
-      libraryList = Array.isArray(parsed) ? parsed : []
-    } catch {
-      libraryList = []
+    const payload = {
+      name: uploadItem.name,
+      category: uploadItem.category,
+      scene: uploadItem.scene,
+      description: uploadItem.description,
+      format: uploadItem.format,
+      tags: uploadItem.tags,
+      fields: uploadItem.fields
     }
-
-    const existedIndex = libraryList.findIndex(item => item.id === uploadItem.id)
-
-    if (existedIndex > -1) {
-      const oldItem = libraryList[existedIndex] || {}
-      libraryList.splice(existedIndex, 1, {
-        ...oldItem,
-        ...uploadItem,
-        id: oldItem.id || uploadItem.id,
-        likes: Number(oldItem.likes || uploadItem.likes || 0),
-        comments: Number(oldItem.comments || uploadItem.comments || 0),
-        isHot: Boolean(oldItem.isHot ?? uploadItem.isHot)
-      })
+    if (isEditMode.value && /^[a-f0-9]{32}$/.test(uploadItem.id)) {
+      await updateTemplate(uploadItem.id, payload)
     } else {
-      libraryList.unshift(uploadItem)
+      await createTemplate(payload)
     }
-
-    localStorage.setItem(
-      TEMPLATE_LIBRARY_STORAGE_KEY,
-      JSON.stringify(libraryList)
-    )
 
     localStorage.removeItem(EDIT_TEMPLATE_STORAGE_KEY)
 
@@ -453,16 +433,13 @@ const fillEditorFromTemplate = (template) => {
     scene: template.scene || '在线编辑',
     description: template.description || '',
     format: template.format || 'Excel / 在线表单',
-    likes: Number(template.likes || 0),
-    comments: Number(template.comments || 0),
-    isHot: Boolean(template.isHot),
     createdAt: template.createdAt || Date.now(),
     fields: normalizedFields
   }
 
   tagsInput.value = Array.isArray(template.tags) && template.tags.length
     ? template.tags.join(', ')
-    : '本地上传, 自定义模板'
+    : '团队模板, 自定义模板'
 }
 
 const loadEditingTemplate = () => {

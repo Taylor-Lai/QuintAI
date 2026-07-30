@@ -10,6 +10,7 @@ from docnexus.api.routes.tasks import enqueue, serialize_task
 from docnexus.core.settings import get_settings
 from docnexus.db import User, get_db
 from docnexus.repositories.tasks import TaskRepository
+from docnexus.services.enterprise import audit, ensure_context, reserve_monthly_run
 from docnexus.services.upload_security import save_upload_safely, validate_file_count
 
 router = APIRouter(tags=["表格处理"])
@@ -24,8 +25,17 @@ async def submit_table_fill(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    context = ensure_context(db, user)
+    context.require("member")
     validate_file_count(len(documents))
-    task = TaskRepository.create(db, user.id, "table_fill", {})
+    task = TaskRepository.create(
+        db,
+        user.id,
+        "table_fill",
+        {},
+        organization_id=context.organization.id,
+        commit=False,
+    )
     workspace = settings.data_dir / "tasks" / task.id
     try:
         template_path, _ = await save_upload_safely(template, workspace, {".xlsx", ".docx"})
@@ -47,11 +57,12 @@ async def submit_table_fill(
             "output_name": f"filled_{template_path.name}",
             "source_names": source_names,
         }
+        reserve_monthly_run(db, context)
+        audit(db, context, user, "table.fill.submit", "task", task.id, {"sources": len(source_names)})
         db.commit()
         enqueue(task)
         return serialize_task(task)
     except Exception:
-        db.delete(task)
-        db.commit()
+        db.rollback()
         shutil.rmtree(workspace, ignore_errors=True)
         raise

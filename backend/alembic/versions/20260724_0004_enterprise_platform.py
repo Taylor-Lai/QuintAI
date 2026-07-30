@@ -42,9 +42,15 @@ def upgrade() -> None:
         "workflow_definitions",
         "workflow_runs",
     ):
-        op.add_column(
-            table, sa.Column("organization_id", sa.String(32), sa.ForeignKey("organizations.id", ondelete="CASCADE"))
-        )
+        with op.batch_alter_table(table) as batch_op:
+            batch_op.add_column(sa.Column("organization_id", sa.String(32)))
+            batch_op.create_foreign_key(
+                f"fk_{table}_organization_id",
+                "organizations",
+                ["organization_id"],
+                ["id"],
+                ondelete="CASCADE",
+            )
         op.create_index(f"ix_{table}_organization_id", table, ["organization_id"])
 
     op.create_table(
@@ -286,6 +292,11 @@ def downgrade() -> None:
         "workflow_definitions",
         "workflow_runs",
     ):
-        op.drop_column(table, "organization_id")
-    op.drop_column("users", "active_organization_id")
+        op.drop_index(f"ix_{table}_organization_id", table_name=table)
+        with op.batch_alter_table(table) as batch_op:
+            batch_op.drop_constraint(f"fk_{table}_organization_id", type_="foreignkey")
+            batch_op.drop_column("organization_id")
+    op.drop_index("ix_users_active_organization_id", table_name="users")
+    with op.batch_alter_table("users") as batch_op:
+        batch_op.drop_column("active_organization_id")
     op.drop_table("organizations")

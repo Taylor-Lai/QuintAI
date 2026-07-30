@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.sp
 import com.quaintai.huiwenrongtong.data.SimpleXlsxWriter
 import com.quaintai.huiwenrongtong.data.local.LocalTemplate
 import com.quaintai.huiwenrongtong.data.local.TemplateStore
+import com.google.gson.JsonObject
 import com.quaintai.huiwenrongtong.ui.components.BrandPill
 import com.quaintai.huiwenrongtong.ui.theme.BrandCard
 import com.quaintai.huiwenrongtong.ui.theme.BrandGoldDark
@@ -51,46 +52,38 @@ import com.quaintai.huiwenrongtong.ui.theme.BrandMuted
 
 private data class BusinessTemplate(
     val id: String, val name: String, val category: String, val scene: String,
-    val fieldCount: Int, val description: String = "", val fields: List<String> = emptyList(), val local: Boolean = false,
+    val fieldCount: Int, val description: String = "", val fields: List<String> = emptyList(), val editable: Boolean = false,
 )
 
-private fun builtIn(name: String, category: String, scene: String, fieldCount: Int) =
-    BusinessTemplate("builtin_${name.hashCode()}", name, category, scene, fieldCount)
-
-private val businessTemplates = listOf(
-    builtIn("合同信息登记表", "行政办公", "合同管理", 12),
-    builtIn("员工入职信息表", "人事管理", "员工档案", 15),
-    builtIn("费用报销申请表", "财务管理", "费用报销", 10),
-    builtIn("采购申请汇总表", "供应链", "采购审批", 11),
-    builtIn("会议签到登记表", "行政办公", "活动签到", 8),
-    builtIn("学生成绩登记表", "教育场景", "成绩管理", 9),
-    builtIn("病历信息采集表", "医疗场景", "病历整理", 14),
-    builtIn("项目进度跟踪表", "项目管理", "进度管理", 13),
-    builtIn("固定资产登记表", "财务管理", "资产管理", 12),
-    builtIn("请假申请单", "人事管理", "请假审批", 9),
-    builtIn("加班申请表", "人事管理", "加班管理", 8),
-    builtIn("客户拜访记录表", "市场销售", "客户跟进", 11),
-    builtIn("售后服务登记表", "市场销售", "售后处理", 10),
-    builtIn("来访人员登记表", "行政办公", "访客管理", 9),
-    builtIn("培训签到反馈表", "教育场景", "培训管理", 10),
-    builtIn("门诊登记信息表", "医疗场景", "门诊登记", 11),
-    builtIn("仓库出入库登记表", "供应链", "库存管理", 12),
-    builtIn("招标报名信息表", "供应链", "招标管理", 10),
-    builtIn("预算编制汇总表", "财务管理", "预算管理", 11),
-    builtIn("任务派发表", "项目管理", "任务分配", 10),
-)
+private fun remoteTemplates(data: JsonObject?): List<BusinessTemplate> =
+    data?.getAsJsonArray("items")?.mapNotNull { element ->
+        runCatching {
+            val item = element.asJsonObject
+            val fields = item.getAsJsonArray("fields")?.mapIndexed { index, field ->
+                if (field.isJsonPrimitive) field.asString
+                else field.asJsonObject.get("label")?.asString ?: "字段${index + 1}"
+            }.orEmpty()
+            BusinessTemplate(
+                id = item.get("id").asString,
+                name = item.get("name").asString,
+                category = item.get("category").asString,
+                scene = item.get("scene")?.asString.orEmpty(),
+                fieldCount = fields.size,
+                description = item.get("description")?.asString.orEmpty(),
+                fields = fields,
+                editable = item.get("editable")?.asBoolean == true,
+            )
+        }.getOrNull()
+    }.orEmpty()
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun TemplateLibraryScreen(onBack: () -> Unit, onEditor: () -> Unit, onUse: () -> Unit) {
+fun TemplateLibraryScreen(data: JsonObject?, onBack: () -> Unit, onEditor: () -> Unit, onUse: () -> Unit, onDelete: (String) -> Unit) {
     val context = LocalContext.current
     val store = remember { TemplateStore(context) }
-    var customTemplates by remember { mutableStateOf(store.templates()) }
     var keyword by remember { mutableStateOf("") }
     var deleteTarget by remember { mutableStateOf<BusinessTemplate?>(null) }
-    val templates = businessTemplates + customTemplates.map {
-        BusinessTemplate(it.id, it.name, it.category, it.scene, it.fields.size, it.description, it.fields, true)
-    }
+    val templates = remember(data) { remoteTemplates(data) }
     val filteredTemplates = templates.filter {
         keyword.isBlank() || listOf(it.name, it.category, it.scene, it.description).any { value -> value.contains(keyword, ignoreCase = true) }
     }
@@ -139,7 +132,7 @@ fun TemplateLibraryScreen(onBack: () -> Unit, onEditor: () -> Unit, onUse: () ->
                     }
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         OutlinedButton(onClick = {
-                            store.setDraft(LocalTemplate(item.id.takeIf { item.local } ?: "local_${System.currentTimeMillis()}", item.name, item.category, item.scene, item.description, templateFields(item)))
+                            store.setDraft(LocalTemplate(item.id.takeIf { item.editable } ?: "builtin_${System.currentTimeMillis()}", item.name, item.category, item.scene, item.description, templateFields(item)))
                             onEditor()
                         }) { Text("编辑") }
                         OutlinedButton(onClick = {
@@ -153,7 +146,7 @@ fun TemplateLibraryScreen(onBack: () -> Unit, onEditor: () -> Unit, onUse: () ->
                             Icon(Icons.Outlined.Download, null)
                             Text(" 下载 Excel")
                         }
-                        if (item.local) OutlinedButton(onClick = { deleteTarget = item }) { Text("删除", color = MaterialTheme.colorScheme.error) }
+                        if (item.editable) OutlinedButton(onClick = { deleteTarget = item }) { Text("删除", color = MaterialTheme.colorScheme.error) }
                     }
                 }
             }
@@ -165,7 +158,7 @@ fun TemplateLibraryScreen(onBack: () -> Unit, onEditor: () -> Unit, onUse: () ->
             title = { Text("删除自定义模板") },
             text = { Text("确定删除“${item.name}”吗？") },
             dismissButton = { TextButton(onClick = { deleteTarget = null }) { Text("取消") } },
-            confirmButton = { Button(onClick = { store.delete(item.id); customTemplates = store.templates(); deleteTarget = null }) { Text("删除") } },
+            confirmButton = { Button(onClick = { onDelete(item.id); deleteTarget = null }) { Text("删除") } },
         )
     }
 }

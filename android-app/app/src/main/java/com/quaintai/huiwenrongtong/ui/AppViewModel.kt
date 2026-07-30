@@ -233,6 +233,18 @@ class AppViewModel(private val repository: HuiwenRongtongRepository) : ViewModel
         loadModule(PlatformModule.KNOWLEDGE)
     }
 
+    fun rebuildKnowledgeGraph(id: String) = launchAction {
+        repository.rebuildKnowledgeGraph(id)
+        _uiState.update { it.copy(message = "知识图谱已依据最新证据重新构建") }
+        loadKnowledgeDetail(id)
+    }
+
+    fun reviewKnowledgeEntity(id: String, entityId: String, reviewStatus: String) = launchAction {
+        repository.reviewKnowledgeEntity(id, entityId, reviewStatus)
+        _uiState.update { it.copy(message = if (reviewStatus == "confirmed") "图谱实体已确认" else "图谱实体已标记存疑") }
+        loadKnowledgeDetail(id)
+    }
+
     fun loadComments(resourceType: String, resourceId: String) = launchAction {
         val comments = repository.comments(resourceType, resourceId)
         _uiState.update { it.copy(resourceComments = it.resourceComments + ("$resourceType:$resourceId" to comments)) }
@@ -258,7 +270,7 @@ class AppViewModel(private val repository: HuiwenRongtongRepository) : ViewModel
             else -> "企业配置已更新"
         }
         _uiState.update { it.copy(message = message) }
-        loadModule(PlatformModule.ENTERPRISE)
+        loadModule(if (action.startsWith("template.")) PlatformModule.TEMPLATES else PlatformModule.ENTERPRISE)
     }
 
     fun createBackup() = launchAction {
@@ -311,9 +323,19 @@ class AppViewModel(private val repository: HuiwenRongtongRepository) : ViewModel
         pollTask(task.id)
     }
 
+    fun deleteTask(id: String) = launchAction {
+        repository.deleteTask(id)
+        _uiState.update { state -> state.copy(tasks = state.tasks.filterNot { it.id == id }, message = "任务记录已删除") }
+    }
+
     fun downloadTask(id: String, destination: Uri) = launchAction {
         repository.downloadTask(id, destination)
         _uiState.update { it.copy(message = "文件已保存") }
+    }
+
+    fun downloadBackup(id: String, destination: Uri) = launchAction {
+        repository.downloadBackup(id, destination)
+        _uiState.update { it.copy(message = "备份文件已保存") }
     }
 
     fun dismissMessage() {

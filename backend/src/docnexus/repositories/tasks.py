@@ -11,11 +11,20 @@ from docnexus.services.task_progress import TASK_STEP_TOTALS
 
 class TaskRepository:
     @staticmethod
-    def create(db: Session, user_id: str, kind: str, payload: dict[str, object]) -> TaskRecord:
+    def create(
+        db: Session,
+        user_id: str,
+        kind: str,
+        payload: dict[str, object],
+        *,
+        organization_id: str | None = None,
+        commit: bool = True,
+    ) -> TaskRecord:
         record = TaskRecord(
             id=uuid.uuid4().hex,
             celery_task_id=str(uuid.uuid4()),
             user_id=user_id,
+            organization_id=organization_id,
             kind=kind,
             payload=payload,
             status="queued",
@@ -26,8 +35,11 @@ class TaskRepository:
             max_attempts=get_settings().task_max_attempts,
         )
         db.add(record)
-        db.commit()
-        db.refresh(record)
+        if commit:
+            db.commit()
+            db.refresh(record)
+        else:
+            db.flush()
         return record
 
     @staticmethod

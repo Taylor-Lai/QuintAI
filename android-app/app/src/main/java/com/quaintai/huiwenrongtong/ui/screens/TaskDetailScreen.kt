@@ -62,9 +62,11 @@ fun TaskDetailScreen(
     onBack: () -> Unit,
     onCancel: (String) -> Unit,
     onRetry: (String) -> Unit,
+    onDelete: (String) -> Unit,
     onDownload: (String, Uri) -> Unit,
 ) {
     var confirmCancel by remember { mutableStateOf(false) }
+    var confirmDelete by remember { mutableStateOf(false) }
     val saveLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/octet-stream")
     ) { uri -> if (uri != null) onDownload(task.id, uri) }
@@ -125,6 +127,9 @@ fun TaskDetailScreen(
                                 Icon(Icons.Outlined.CloudDownload, null, Modifier.size(18.dp))
                                 Text(" 保存结果")
                             }
+                        }
+                        if (task.status in setOf("succeeded", "failed", "cancelled")) {
+                            OutlinedButton(onClick = { confirmDelete = true }) { Text("删除记录") }
                         }
                     }
                 }
@@ -190,6 +195,15 @@ fun TaskDetailScreen(
             text = { Text("确定取消当前任务吗？已完成的处理步骤不会继续执行。") },
             dismissButton = { TextButton(onClick = { confirmCancel = false }) { Text("继续等待") } },
             confirmButton = { Button(onClick = { confirmCancel = false; onCancel(task.id) }) { Text("取消任务") } },
+        )
+    }
+    if (confirmDelete) {
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            title = { Text("删除任务记录") },
+            text = { Text("删除后，任务记录及其服务端结果文件将无法恢复。") },
+            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("取消") } },
+            confirmButton = { Button(onClick = { confirmDelete = false; onDelete(task.id) }) { Text("确认删除") } },
         )
     }
 }

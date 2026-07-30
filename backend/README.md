@@ -17,6 +17,8 @@ src/docnexus/
 `-- main.py                  # ASGI 应用入口
 ```
 
+Web 会话由服务端通过 HttpOnly Cookie 维护，Android 与外部集成使用 Bearer Token 或受限 API 密钥。生产环境的认证与 AI 端点限流由 Redis 统一计数，Webhook 失败投递由 Celery Beat 周期性恢复。
+
 ## 本地启动
 
 在仓库根目录执行：
@@ -35,7 +37,11 @@ uvicorn docnexus.main:app --host 127.0.0.1 --port 8000 --reload
 celery -A docnexus.worker.celery_app:celery_app worker --loglevel=INFO
 ```
 
-启动后可访问 `/docs` 查看 OpenAPI，使用 `/health/ready` 检查 PostgreSQL 与 Redis。
+启动后可访问 `/api/docs` 查看 OpenAPI，使用 `/api/health/ready` 检查 PostgreSQL 与 Redis。
+
+## 知识图谱数据更新
+
+执行数据库迁移后，知识图谱以实体、关系和证据记录持久化。文档加入知识库以及已入库文档完成字段抽取时会自动更新图谱；拥有知识库编辑权限的用户也可在 Web 或 Android 端选择“重新构建”，根据当前文档和抽取结果执行幂等重建。图谱接口始终执行组织所有权校验。
 
 ## 测试与检查
 

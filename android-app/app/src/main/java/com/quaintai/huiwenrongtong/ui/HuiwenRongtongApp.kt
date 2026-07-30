@@ -54,7 +54,10 @@ fun HuiwenRongtongApp(
     onSearchKnowledge: (String, String) -> Unit,
     onLoadKnowledgeDetail: (String) -> Unit,
     onAddKnowledgeDocument: (String, String) -> Unit,
+    onRebuildKnowledgeGraph: (String) -> Unit,
+    onReviewKnowledgeEntity: (String, String, String) -> Unit,
     onCreateBackup: () -> Unit,
+    onDownloadBackup: (String, Uri) -> Unit,
     onEnterpriseAction: (String, JsonObject) -> Unit,
     onCreateComment: (String, String, String) -> Unit,
     onResolveComment: (String, String, String) -> Unit,
@@ -67,6 +70,7 @@ fun HuiwenRongtongApp(
     onSubmit: (FeatureKind, Uri, List<Uri>, String, () -> Unit) -> Unit,
     onCancelTask: (String) -> Unit,
     onRetryTask: (String) -> Unit,
+    onDeleteTask: (String) -> Unit,
     onDownloadTask: (String, Uri) -> Unit,
     onDismissMessage: () -> Unit,
 ) {
@@ -84,7 +88,7 @@ fun HuiwenRongtongApp(
                         navController.navigate("task/${task.id}")
                     },
                     onModuleSelected = { module ->
-                        if (module !in setOf(PlatformModule.TEMPLATES, PlatformModule.EDITOR, PlatformModule.GUIDE)) {
+                        if (module !in setOf(PlatformModule.EDITOR, PlatformModule.GUIDE)) {
                             onLoadModule(module)
                             if (module == PlatformModule.DOCUMENTS) onLoadModule(PlatformModule.WORKFLOWS)
                         }
@@ -116,6 +120,10 @@ fun HuiwenRongtongApp(
                         onBack = { navController.popBackStack() },
                         onCancel = onCancelTask,
                         onRetry = onRetryTask,
+                        onDelete = { taskId ->
+                            onDeleteTask(taskId)
+                            navController.popBackStack()
+                        },
                         onDownload = onDownloadTask,
                     )
                 }
@@ -125,11 +133,16 @@ fun HuiwenRongtongApp(
                     .getOrDefault(PlatformModule.OVERVIEW)
                 when (module) {
                     PlatformModule.TEMPLATES -> TemplateLibraryScreen(
+                        data = state.moduleData[module],
                         onBack = { navController.popBackStack() },
                         onEditor = { navController.navigate("module/${PlatformModule.EDITOR.name}") },
                         onUse = { navController.navigate("upload/${FeatureKind.TABLE.name}") },
+                        onDelete = { id -> onEnterpriseAction("template.delete", JsonObject().apply { addProperty("id", id) }) },
                     )
-                    PlatformModule.EDITOR -> TemplateEditorScreen(onBack = { navController.popBackStack() })
+                    PlatformModule.EDITOR -> TemplateEditorScreen(
+                        onBack = { navController.popBackStack() },
+                        onSave = { payload -> onEnterpriseAction("template.save", payload) },
+                    )
                     PlatformModule.GUIDE -> GuideScreen(onBack = { navController.popBackStack() })
                     PlatformModule.DOCUMENTS -> DocumentLibraryScreen(
                         data = state.moduleData[module], loading = module in state.loadingModules,
@@ -161,11 +174,14 @@ fun HuiwenRongtongApp(
                         detailData = state.knowledgeDetail,
                         onRefresh = { onLoadModule(module) }, onCreate = onCreateKnowledge, onSearch = onSearchKnowledge,
                         onSelect = onLoadKnowledgeDetail, onAttach = onAddKnowledgeDocument,
+                        onRebuild = onRebuildKnowledgeGraph,
+                        onReviewEntity = onReviewKnowledgeEntity,
                     )
                     PlatformModule.ENTERPRISE -> EnterpriseCenterScreen(
                         data = state.moduleData[module], loading = module in state.loadingModules,
                         onBack = { navController.popBackStack() }, onRefresh = { onLoadModule(module) },
                         onBackup = onCreateBackup, onAction = onEnterpriseAction,
+                        onDownloadBackup = onDownloadBackup,
                     )
                     PlatformModule.ADMIN -> AdminCenterScreen(
                         data = state.moduleData[module], loading = module in state.loadingModules,

@@ -285,7 +285,8 @@ fun WorkflowCenterScreen(
 fun KnowledgeCenterScreen(
     data: JsonObject?, searchData: JsonObject?, detailData: JsonObject?, loading: Boolean, onBack: () -> Unit, onRefresh: () -> Unit,
     onCreate: (String, String, String) -> Unit, onSearch: (String, String) -> Unit,
-    onSelect: (String) -> Unit, onAttach: (String, String) -> Unit,
+    onSelect: (String) -> Unit, onAttach: (String, String) -> Unit, onRebuild: (String) -> Unit,
+    onReviewEntity: (String, String, String) -> Unit,
 ) {
     var name by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
@@ -308,7 +309,7 @@ fun KnowledgeCenterScreen(
             }
         }
         items(collections, key = { it.str("id") }) { collection ->
-            PlatformRecordCard(collection.str("name"), "${collection.str("retrieval_mode")} · ${collection.str("document_count")} 份文档") {
+            PlatformRecordCard(collection.str("name"), "${collection.str("retrieval_mode")} · ${collection.str("documents", "document_count")} 份文档") {
                 OutlinedButton(onClick = { selectedId = collection.str("id"); onSelect(selectedId) }) { Text(if (selectedId == collection.str("id")) "已选择" else "选择") }
             }
         }
@@ -316,15 +317,28 @@ fun KnowledgeCenterScreen(
             item {
                 Column(Modifier.padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("集合内容与图谱", style = MaterialTheme.typography.titleLarge)
+                    val graph = detailData?.getAsJsonObject("graph")
                     Text(
-                        "已挂载 ${detailData?.getAsJsonObject("documents").items().size} 份文档 · 实体 ${detailData?.getAsJsonObject("graph")?.array("entities")?.size() ?: 0} · 关系 ${detailData?.getAsJsonObject("graph")?.array("relations")?.size() ?: 0}",
+                        "已挂载 ${detailData?.getAsJsonObject("documents").items().size} 份文档 · 实体 ${graph?.array("entities")?.size() ?: 0} · 关系 ${graph?.array("relations")?.size() ?: 0} · 证据 ${graph?.getAsJsonObject("metadata")?.str("evidence_count") ?: "0"}",
                         color = BrandMuted,
                     )
                     OutlinedTextField(documentId, { documentId = it }, label = { Text("要挂载的文档 ID") }, modifier = Modifier.fillMaxWidth())
                     Button(onClick = { onAttach(selectedId, documentId); documentId = "" }, enabled = documentId.length == 32, modifier = Modifier.fillMaxWidth()) { Text("加入知识集合") }
+                    OutlinedButton(onClick = { onRebuild(selectedId) }, enabled = !loading, modifier = Modifier.fillMaxWidth()) { Text("依据最新证据重新构建图谱") }
                     detailData?.getAsJsonObject("documents").items().forEach { doc -> Text("• ${doc.str("filename", "document_id")}", color = BrandMuted) }
-                    detailData?.getAsJsonObject("graph")?.array("entities")?.take(20)?.forEach { entity ->
-                        if (entity.isJsonObject) Text("实体 · ${entity.asJsonObject.str("name", "entity_id")}", color = BrandMuted, fontSize = 12.sp)
+                    graph?.array("entities")?.take(20)?.forEach { entity ->
+                        if (entity.isJsonObject) {
+                            val value = entity.asJsonObject
+                            Text("${value.str("entity_type", "实体")} · ${value.str("name", "entity_id")}", color = BrandMuted, fontSize = 12.sp)
+                            Text("状态：${when (value.str("review_status")) { "confirmed" -> "已确认"; "questioned" -> "存疑"; else -> "待复核" }}", color = BrandMuted, fontSize = 11.sp)
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                OutlinedButton(onClick = { onReviewEntity(selectedId, value.str("entity_id"), "confirmed") }) { Text("确认") }
+                                OutlinedButton(onClick = { onReviewEntity(selectedId, value.str("entity_id"), "questioned") }) { Text("存疑") }
+                            }
+                            value.array("evidence").firstOrNull()?.takeIf(JsonElement::isJsonObject)?.asJsonObject?.let { evidence ->
+                                Text("  来源：${evidence.str("filename")} · ${evidence.str("snippet")}", color = BrandMuted, fontSize = 11.sp, maxLines = 2)
+                            }
+                        }
                     }
                 }
             }
@@ -334,16 +348,23 @@ fun KnowledgeCenterScreen(
                 Text("知识检索", style = MaterialTheme.typography.titleLarge)
                 OutlinedTextField(query, { query = it }, label = { Text("输入检索问题") }, modifier = Modifier.fillMaxWidth())
                 Button(onClick = { onSearch(selectedId, query) }, enabled = selectedId.isNotBlank() && query.length >= 2, modifier = Modifier.fillMaxWidth()) { Text("搜索") }
+                searchData?.getAsJsonObject("retrieval")?.array("graph_paths")?.forEach { path ->
+                    Text("关联路径 · ${path.asString}", color = BrandMuted, fontSize = 11.sp)
+                }
             }
         }
-        items(results) { result -> PlatformRecordCard(result.str("filename", "title", "id"), result.str("snippet", "content")) {} }
+        items(results) { result ->
+            PlatformRecordCard(result.str("filename", "title", "id"), result.str("snippet", "content")) {
+                result.array("graph_paths").forEach { path -> Text(path.asString, color = BrandMuted, fontSize = 11.sp) }
+            }
+        }
     }
 }
 
 @Composable
 fun EnterpriseCenterScreen(
     data: JsonObject?, loading: Boolean, onBack: () -> Unit, onRefresh: () -> Unit, onBackup: () -> Unit,
-    onAction: (String, JsonObject) -> Unit,
+    onAction: (String, JsonObject) -> Unit, onDownloadBackup: (String, Uri) -> Unit,
 ) {
     var organizationName by remember { mutableStateOf("") }
     var memberEmail by remember { mutableStateOf("") }
@@ -355,6 +376,14 @@ fun EnterpriseCenterScreen(
     var workflowId by remember { mutableStateOf("") }
     var scheduleDocumentId by remember { mutableStateOf("") }
     var confirmation by remember { mutableStateOf<PendingConfirmation?>(null) }
+    var pendingBackupId by remember { mutableStateOf<String?>(null) }
+    val backupLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/zip")
+    ) { uri ->
+        val backupId = pendingBackupId
+        pendingBackupId = null
+        if (uri != null && backupId != null) onDownloadBackup(backupId, uri)
+    }
     val dashboard = data?.getAsJsonObject("dashboard")
     val organization = data?.getAsJsonObject("organization")
     val organizationRole = organization?.str("role").orEmpty()
@@ -456,16 +485,7 @@ fun EnterpriseCenterScreen(
                         addProperty("cron_expression", "0 9 * * 1-5"); addProperty("timezone", "Asia/Shanghai"); addProperty("retry_limit", 2)
                     }); scheduleName = ""
                 }, enabled = scheduleName.length >= 2 && workflowId.length == 32 && scheduleDocumentId.length == 32 && !loading, modifier = Modifier.fillMaxWidth()) { Text("创建工作日计划") }
-                if (isOwner) Text("套餐切换", style = MaterialTheme.typography.titleMedium)
-                if (isOwner) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf("starter" to "基础版", "team" to "团队版", "enterprise" to "企业版").forEach { (plan, label) ->
-                        OutlinedButton(onClick = {
-                            confirmation = PendingConfirmation("切换套餐", "确认切换为${label}吗？此操作会立即更新当前组织额度。") {
-                                onAction("subscription.change", JsonObject().apply { addProperty("plan", plan) })
-                            }
-                        }) { Text(label) }
-                    }
-                }
+                if (isOwner) Text("套餐与资源额度由平台管理员依据授权配置。", color = BrandMuted)
             }
         }
         sections.plus(listOf("webhook_deliveries" to "投递记录", "backups" to "备份记录")).forEach { (key, title) ->
@@ -497,6 +517,10 @@ fun EnterpriseCenterScreen(
                                     onAction("schedule.delete", JsonObject().apply { addProperty("id", record.str("id")) })
                                 }
                             }) { Text("删除") }
+                            "backups" -> OutlinedButton(onClick = {
+                                pendingBackupId = record.str("id")
+                                backupLauncher.launch("慧文融通备份-${record.str("id").take(8)}.zip")
+                            }) { Text("下载") }
                         }
                     }
                 }

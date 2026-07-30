@@ -10,6 +10,7 @@ from docnexus.api.routes.tasks import enqueue, serialize_task
 from docnexus.core.settings import get_settings
 from docnexus.db import User, get_db
 from docnexus.repositories.tasks import TaskRepository
+from docnexus.services.enterprise import audit, ensure_context, reserve_monthly_run
 from docnexus.services.upload_security import save_upload_safely
 
 router = APIRouter(tags=["文档处理"])
@@ -23,7 +24,16 @@ async def submit_document_edit(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    task = TaskRepository.create(db, user.id, "document_edit", {})
+    context = ensure_context(db, user)
+    context.require("member")
+    task = TaskRepository.create(
+        db,
+        user.id,
+        "document_edit",
+        {},
+        organization_id=context.organization.id,
+        commit=False,
+    )
     workspace = settings.data_dir / "tasks" / task.id
     try:
         file_path, _ = await save_upload_safely(document, workspace / "input", {".docx"})
@@ -32,11 +42,12 @@ async def submit_document_edit(
             "command": command.strip(),
             "output_name": f"formatted_{file_path.name}",
         }
+        reserve_monthly_run(db, context)
+        audit(db, context, user, "document.edit.submit", "task", task.id)
         db.commit()
         enqueue(task)
         return serialize_task(task)
     except Exception:
-        db.delete(task)
-        db.commit()
+        db.rollback()
         shutil.rmtree(workspace, ignore_errors=True)
         raise

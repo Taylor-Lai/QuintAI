@@ -10,20 +10,22 @@ from sqlalchemy.orm import Session
 from docnexus.core.security import AuthService
 from docnexus.db import ApiCredential, User, get_db
 
-bearer_scheme = HTTPBearer()
+bearer_scheme = HTTPBearer(auto_error=False)
 
 
 async def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
     db: Session = Depends(get_db),
-    request: Request = None,  # type: ignore[assignment]
 ) -> User:
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
-    token = credentials.credentials
+    token = credentials.credentials if credentials is not None else request.cookies.get("huiwen_session")
+    if not token:
+        raise credentials_exception
     payload = AuthService.decode_access_token(token)
     if payload is None or not (user_id := payload.get("sub")):
         if not token.startswith("qn_"):
@@ -35,8 +37,8 @@ async def get_current_user(
             or (credential.expires_at and credential.expires_at < datetime.now())
         ):
             raise credentials_exception
-        required_scope = "workspace:read" if request is None or request.method == "GET" else "workspace:write"
-        if request is not None and request.url.path.startswith("/enterprise"):
+        required_scope = "workspace:read" if request.method == "GET" else "workspace:write"
+        if request.url.path.startswith("/api/enterprise"):
             required_scope = "enterprise:read" if request.method == "GET" else "enterprise:write"
         if required_scope not in (credential.scopes or []) and "*" not in (credential.scopes or []):
             raise HTTPException(status_code=403, detail="API 密钥缺少所需权限范围")

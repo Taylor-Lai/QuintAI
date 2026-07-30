@@ -6,16 +6,18 @@ from types import SimpleNamespace
 
 import pytest
 from docnexus.api.dependencies import get_current_user
+from docnexus.api.routes.tasks import delete_task
 from docnexus.core.rate_limit import RateLimitMiddleware
 from docnexus.core.security import AuthService
 from docnexus.db.models import Base, User
 from docnexus.repositories.extractions import ExtractionRepository
 from docnexus.repositories.tasks import TaskRepository
 from docnexus.schemas.auth import LoginRequest, UserCreate
+from docnexus.schemas.enterprise import WebhookCreate
 from docnexus.services.document_parser import DocumentParser
 from docnexus.services.upload_security import safe_filename, validate_upload_content
 from docnexus.worker import tasks as worker_tasks
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
@@ -37,6 +39,11 @@ def db_session():
 
 def _user(user_id: str, email: str) -> User:
     return User(id=user_id, username=user_id, email=email, password_hash="hash")
+
+
+def _request(path: str = "/api/tasks", cookie: str | None = None) -> Request:
+    headers = [(b"cookie", f"huiwen_session={cookie}".encode())] if cookie else []
+    return Request({"type": "http", "method": "GET", "path": path, "headers": headers, "query_string": b""})
 
 
 def test_extraction_records_are_strictly_isolated_by_user(db_session) -> None:
@@ -71,11 +78,12 @@ def test_incrementing_token_version_revokes_existing_token(db_session, monkeypat
     db_session.commit()
     token = AuthService.create_access_token({"sub": user.id, "ver": 0})
     credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
-    assert asyncio.run(get_current_user(credentials, db_session)).id == user.id
+    assert asyncio.run(get_current_user(_request(), credentials, db_session)).id == user.id
+    assert asyncio.run(get_current_user(_request(cookie=token), None, db_session)).id == user.id
     user.token_version = 1
     db_session.commit()
     with pytest.raises(HTTPException) as exc_info:
-        asyncio.run(get_current_user(credentials, db_session))
+        asyncio.run(get_current_user(_request(), credentials, db_session))
     assert exc_info.value.status_code == 401
 
 
@@ -104,15 +112,63 @@ def test_rate_limit_returns_retry_after(monkeypatch) -> None:
     app = FastAPI()
     app.add_middleware(RateLimitMiddleware)
 
-    @app.post("/auth/login")
+    @app.post("/api/auth/login")
     async def login():
         return {"ok": True}
 
     client = TestClient(app)
-    assert client.post("/auth/login").status_code == 200
-    response = client.post("/auth/login")
+    assert client.post("/api/auth/login").status_code == 200
+    response = client.post("/api/auth/login")
     assert response.status_code == 429
     assert int(response.headers["Retry-After"]) >= 1
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://hooks.example.com/events",
+        "https://localhost/events",
+        "https://127.0.0.1/events",
+        "https://10.0.0.5/events",
+        "https://[::1]/events",
+    ],
+)
+def test_webhook_rejects_insecure_or_internal_destinations(url: str) -> None:
+    with pytest.raises(ValidationError):
+        WebhookCreate(name="delivery", url=url, events=["task.succeeded"])
+
+
+def test_terminal_task_deletion_removes_record_and_managed_output(db_session, tmp_path, monkeypatch) -> None:
+    user = _user("delete-user", "delete@example.com")
+    db_session.add(user)
+    db_session.commit()
+    task = TaskRepository.create(db_session, user.id, "document_extract", {})
+    output = tmp_path / "result.txt"
+    output.write_text("result", encoding="utf-8")
+    task.status = "succeeded"
+    task.output_path = str(output)
+    db_session.commit()
+    monkeypatch.setattr(
+        "docnexus.api.routes.tasks.get_settings",
+        lambda: SimpleNamespace(data_dir=tmp_path),
+    )
+
+    delete_task(task.id, db_session, user)
+
+    assert TaskRepository.get_owned(db_session, task.id, user.id) is None
+    assert not output.exists()
+
+
+def test_running_task_cannot_be_deleted(db_session) -> None:
+    user = _user("running-user", "running@example.com")
+    db_session.add(user)
+    db_session.commit()
+    task = TaskRepository.create(db_session, user.id, "document_extract", {})
+
+    with pytest.raises(HTTPException) as exc_info:
+        delete_task(task.id, db_session, user)
+
+    assert exc_info.value.status_code == 409
 
 
 @pytest.mark.parametrize(

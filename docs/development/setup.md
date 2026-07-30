@@ -27,7 +27,7 @@ Copy-Item .env.example .env
 ```powershell
 docker compose up --build -d
 docker compose ps
-Invoke-RestMethod http://127.0.0.1:8000/health/ready
+Invoke-RestMethod http://127.0.0.1:8000/api/health/ready
 ```
 
 API、Web、Worker、调度器、PostgreSQL 和 Redis 会一并启动。查看日志：

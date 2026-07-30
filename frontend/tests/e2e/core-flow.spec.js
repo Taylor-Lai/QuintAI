@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test'
 
 test('首页可以进入用户指南', async ({ page }) => {
+  await page.route('**/api/user/profile', (route) => route.fulfill({ status: 401, contentType: 'application/json', body: '{"detail":"unauthorized"}' }))
   await page.goto('/')
 
   await expect(page).toHaveTitle('慧文融通 - 首页')
@@ -12,6 +13,7 @@ test('首页可以进入用户指南', async ({ page }) => {
 })
 
 test('受保护页面要求登录，登录后返回首页', async ({ page }) => {
+  await page.route('**/api/user/profile', (route) => route.fulfill({ status: 401, contentType: 'application/json', body: '{"detail":"unauthorized"}' }))
   await page.route('**/api/auth/login', async (route) => {
     await route.fulfill({
       status: 200,
@@ -41,5 +43,5 @@ test('受保护页面要求登录，登录后返回首页', async ({ page }) => 
 
   await expect(page).toHaveURL(/\/$/)
   await expect(page.getByText('让复杂文档处理变得简单高效')).toBeVisible()
-  await expect(page.evaluate(() => localStorage.getItem('sc_token'))).resolves.toBe('e2e-token')
+  await expect(page.evaluate(() => localStorage.getItem('sc_token'))).resolves.toBeNull()
 })

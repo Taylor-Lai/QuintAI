@@ -4,21 +4,9 @@ import { useUserStore } from '../stores/user'
 
 const service = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL ?? (import.meta.env.DEV ? '/api' : ''),
-  timeout: 180000
+  timeout: 180000,
+  withCredentials: true
 })
-
-service.interceptors.request.use(
-  (config) => {
-    const userStore = useUserStore(pinia)
-
-    if (userStore.token) {
-      config.headers.Authorization = `Bearer ${userStore.token}`
-    }
-
-    return config
-  },
-  (error) => Promise.reject(error)
-)
 
 service.interceptors.response.use(
   (response) => {

@@ -25,7 +25,6 @@ class Settings:
     bootstrap_admin_email: str | None
     bootstrap_admin_password: str | None
     cors_origins: tuple[str, ...]
-    static_dir: Path
     database_url: str
     data_dir: Path = Path("data")
     max_upload_bytes: int = 25 * 1024 * 1024
@@ -78,7 +77,6 @@ def get_settings() -> Settings:
                 "http://localhost:5173,http://127.0.0.1:5173",
             )
         ),
-        static_dir=Path(os.getenv("STATIC_DIR", "static")),
         database_url=os.getenv("DATABASE_URL", "sqlite:///./doc_system.db"),
         data_dir=Path(os.getenv("DATA_DIR", "data")),
         max_upload_bytes=int(os.getenv("MAX_UPLOAD_BYTES", str(25 * 1024 * 1024))),

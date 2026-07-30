@@ -36,6 +36,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.google.gson.GsonBuilder
+import com.google.gson.JsonArray
+import com.google.gson.JsonObject
 import com.quaintai.huiwenrongtong.data.SimpleXlsxWriter
 import com.quaintai.huiwenrongtong.data.local.LocalTemplate
 import com.quaintai.huiwenrongtong.data.local.TemplateStore
@@ -44,7 +46,7 @@ import com.quaintai.huiwenrongtong.ui.theme.BrandCard
 import com.quaintai.huiwenrongtong.ui.theme.BrandMuted
 
 @Composable
-fun TemplateEditorScreen(onBack: () -> Unit) {
+fun TemplateEditorScreen(onBack: () -> Unit, onSave: (JsonObject) -> Unit) {
     val context = LocalContext.current
     val store = remember { TemplateStore(context) }
     val draft = remember { store.draft() }
@@ -111,7 +113,18 @@ fun TemplateEditorScreen(onBack: () -> Unit) {
                         id = draft?.id ?: "local_${System.currentTimeMillis()}", name = name.trim(), category = category.trim(),
                         scene = scene.trim(), description = description.trim(), fields = fields.map(String::trim).filter(String::isNotBlank),
                     )
-                    store.save(template); store.setDraft(template); savedMessage = "已保存到模板库"
+                    store.setDraft(template)
+                    onSave(JsonObject().apply {
+                        addProperty("id", template.id)
+                        addProperty("name", template.name)
+                        addProperty("category", template.category)
+                        addProperty("scene", template.scene)
+                        addProperty("description", template.description)
+                        addProperty("format", "Excel / 在线表单")
+                        add("tags", JsonArray())
+                        add("fields", JsonArray().apply { template.fields.forEach { add(it) } })
+                    })
+                    savedMessage = "模板已提交到团队模板库"
                 },
                 enabled = name.isNotBlank() && fields.any(String::isNotBlank),
                 modifier = Modifier.fillMaxWidth(),

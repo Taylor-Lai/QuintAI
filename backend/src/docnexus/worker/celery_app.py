@@ -20,7 +20,11 @@ celery_app.conf.update(
         "scan-automation-schedules": {
             "task": "docnexus.scan_schedules",
             "schedule": 30.0,
-        }
+        },
+        "recover-webhook-deliveries": {
+            "task": "docnexus.recover_webhook_deliveries",
+            "schedule": 60.0,
+        },
     },
 )
 celery_app.autodiscover_tasks(["docnexus.worker"])

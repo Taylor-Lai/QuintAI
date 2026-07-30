@@ -64,19 +64,30 @@ def upgrade() -> None:
     for column in ("organization_id", "endpoint_id", "event", "status", "created_at"):
         op.create_index(f"ix_webhook_deliveries_{column}", "webhook_deliveries", [column])
 
-    op.add_column("automation_schedules", sa.Column("document_id", sa.String(32), sa.ForeignKey("document_records.id", ondelete="CASCADE")))
+    with op.batch_alter_table("automation_schedules") as batch_op:
+        batch_op.add_column(sa.Column("document_id", sa.String(32)))
+        batch_op.create_foreign_key(
+            "fk_automation_schedules_document_id",
+            "document_records",
+            ["document_id"],
+            ["id"],
+            ondelete="CASCADE",
+        )
     op.add_column("automation_schedules", sa.Column("last_status", sa.String(20)))
     op.create_index("ix_automation_schedules_document_id", "automation_schedules", ["document_id"])
 
 
 def downgrade() -> None:
     op.drop_index("ix_automation_schedules_document_id", table_name="automation_schedules")
-    op.drop_column("automation_schedules", "last_status")
-    op.drop_column("automation_schedules", "document_id")
+    with op.batch_alter_table("automation_schedules") as batch_op:
+        batch_op.drop_column("last_status")
+        batch_op.drop_constraint("fk_automation_schedules_document_id", type_="foreignkey")
+        batch_op.drop_column("document_id")
     op.drop_table("webhook_deliveries")
     op.drop_table("knowledge_chunks")
     op.drop_table("task_events")
-    op.drop_column("task_records", "evidence_summary")
-    op.drop_column("task_records", "quality_report")
-    op.drop_column("task_records", "total_steps")
-    op.drop_column("task_records", "completed_steps")
+    with op.batch_alter_table("task_records") as batch_op:
+        batch_op.drop_column("evidence_summary")
+        batch_op.drop_column("quality_report")
+        batch_op.drop_column("total_steps")
+        batch_op.drop_column("completed_steps")

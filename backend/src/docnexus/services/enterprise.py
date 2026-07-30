@@ -8,10 +8,11 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 from fastapi import HTTPException
+from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from docnexus.db import AuditLog, Organization, OrganizationMember, Subscription, User
+from docnexus.db import AuditLog, DocumentRecord, Organization, OrganizationMember, Subscription, User
 
 PLAN_LIMITS = {
     "starter": {"members": 3, "documents": 500, "monthly_runs": 200, "storage_bytes": 2 * 1024**3},
@@ -139,3 +140,55 @@ def subscription_for(db: Session, context: EnterpriseContext) -> Subscription:
         db.add(subscription)
         db.flush()
     return subscription
+
+
+def reserve_monthly_run(db: Session, context: EnterpriseContext) -> Subscription:
+    """Reserve one AI/workflow run inside the caller's transaction."""
+    subscription = (
+        db.query(Subscription)
+        .filter_by(organization_id=context.organization.id)
+        .with_for_update()
+        .first()
+    )
+    if subscription is None:
+        subscription = subscription_for(db, context)
+    now = datetime.now()
+    if subscription.period_end is None or subscription.period_end <= now:
+        subscription.period_start = now
+        subscription.period_end = now + timedelta(days=30)
+        subscription.usage = {**(subscription.usage or {}), "monthly_runs": 0}
+    usage = dict(subscription.usage or {})
+    used = int(usage.get("monthly_runs", 0))
+    limit = int(subscription.limits.get("monthly_runs", PLAN_LIMITS["starter"]["monthly_runs"]))
+    if used >= limit:
+        raise HTTPException(409, "当前套餐的本周期任务运行次数已达上限")
+    usage["monthly_runs"] = used + 1
+    subscription.usage = usage
+    return subscription
+
+
+def ensure_document_capacity(
+    db: Session,
+    context: EnterpriseContext,
+    *,
+    additional_documents: int,
+    additional_bytes: int,
+) -> None:
+    """Validate organization document and storage quotas in the current transaction."""
+    subscription = subscription_for(db, context)
+    current_documents = (
+        db.query(func.count(DocumentRecord.id))
+        .filter(DocumentRecord.organization_id == context.organization.id)
+        .scalar()
+        or 0
+    )
+    current_storage = (
+        db.query(func.coalesce(func.sum(DocumentRecord.size_bytes), 0))
+        .filter(DocumentRecord.organization_id == context.organization.id)
+        .scalar()
+        or 0
+    )
+    if current_documents + additional_documents > int(subscription.limits.get("documents", 500)):
+        raise HTTPException(409, "当前套餐的文档数量已达上限")
+    if current_storage + additional_bytes > int(subscription.limits.get("storage_bytes", 2 * 1024**3)):
+        raise HTTPException(409, "当前套餐的文档存储空间已达上限")

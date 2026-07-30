@@ -11,6 +11,8 @@ from docnexus.db import (
     Base,
     DocumentRecord,
     Organization,
+    OrganizationMember,
+    Subscription,
     TaskRecord,
     User,
     WebhookDelivery,
@@ -45,7 +47,21 @@ def _identity(db, suffix: str = "1") -> tuple[User, Organization]:
         name=f"测试组织 {suffix}",
         slug=f"test-org-{suffix}",
     )
-    db.add_all([user, organization])
+    membership = OrganizationMember(
+        id=f"membership-{suffix}",
+        organization_id=organization.id,
+        user_id=user.id,
+        role="owner",
+    )
+    subscription = Subscription(
+        id=f"subscription-{suffix}",
+        organization_id=organization.id,
+        plan="starter",
+        limits={"members": 3, "documents": 500, "monthly_runs": 200, "storage_bytes": 2 * 1024**3},
+        usage={"monthly_runs": 0},
+    )
+    user.active_organization_id = organization.id
+    db.add_all([user, organization, membership, subscription])
     db.commit()
     return user, organization
 

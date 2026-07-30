@@ -6,12 +6,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from celery.exceptions import SoftTimeLimitExceeded
+from fastapi import HTTPException
 
 from docnexus.ai.contracts import DocumentOperationInput, InformationExtractionInput, TableFillingInput
 from docnexus.ai.workflows import handle_module_1_format, handle_module_2_extract, handle_module_3_fusion
 from docnexus.db import (
     AutomationSchedule,
     DocumentRecord,
+    KnowledgeItem,
+    Organization,
+    OrganizationMember,
     ReviewRecord,
     SessionLocal,
     TaskRecord,
@@ -20,10 +24,12 @@ from docnexus.db import (
 )
 from docnexus.repositories.extractions import ExtractionRepository
 from docnexus.repositories.tasks import TaskRepository
+from docnexus.services.enterprise import EnterpriseContext, reserve_monthly_run
+from docnexus.services.knowledge_graph import rebuild_knowledge_graph
 from docnexus.services.quality import extraction_quality, table_quality
 from docnexus.services.scheduling import next_cron_time
 from docnexus.services.task_progress import report_step
-from docnexus.services.webhooks import publish_event
+from docnexus.services.webhooks import publish_event, recover_webhook_deliveries
 from docnexus.worker.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
@@ -132,6 +138,11 @@ def _execute(task_id: str) -> None:
                 if document:
                     document.status = "needs_review"
                     document.content_preview = str(extract_result.extracted_data)[:2000]
+                    collection_ids = [
+                        item[0] for item in db.query(KnowledgeItem.collection_id).filter_by(document_id=document.id).all()
+                    ]
+                    for collection_id in collection_ids:
+                        rebuild_knowledge_graph(db, collection_id)
                     db.commit()
             review = db.query(ReviewRecord).filter(ReviewRecord.extraction_id == extraction.id).first()
             review_fields = list(review.fields or []) if review else []
@@ -266,8 +277,39 @@ def scan_schedules() -> dict[str, int]:
                 schedule.last_status = "invalid"
                 schedule.status = "paused"
                 continue
-            task = TaskRepository.create(db, schedule.user_id, "document_extract", {})
-            task.organization_id = schedule.organization_id
+            organization = db.get(Organization, schedule.organization_id)
+            membership = (
+                db.query(OrganizationMember)
+                .filter_by(
+                    organization_id=schedule.organization_id,
+                    user_id=schedule.user_id,
+                    status="active",
+                )
+                .first()
+            )
+            if organization is None or membership is None:
+                schedule.last_status = "invalid_owner"
+                schedule.status = "paused"
+                continue
+            context = EnterpriseContext(organization=organization, membership=membership)
+            try:
+                reserve_monthly_run(db, context)
+            except HTTPException:
+                schedule.last_status = "quota_exceeded"
+                schedule.next_run_at = next_cron_time(
+                    schedule.cron_expression,
+                    schedule.timezone,
+                    after=now.replace(tzinfo=timezone.utc),
+                )
+                continue
+            task = TaskRepository.create(
+                db,
+                schedule.user_id,
+                "document_extract",
+                {},
+                organization_id=schedule.organization_id,
+                commit=False,
+            )
             task.max_attempts = schedule.retry_limit + 1
             run = WorkflowRun(
                 id=uuid.uuid4().hex,
@@ -301,3 +343,8 @@ def scan_schedules() -> dict[str, int]:
             queued += 1
         db.commit()
     return {"queued": queued}
+
+
+@celery_app.task(name="docnexus.recover_webhook_deliveries")
+def recover_webhooks() -> dict[str, int]:
+    return {"queued": recover_webhook_deliveries()}

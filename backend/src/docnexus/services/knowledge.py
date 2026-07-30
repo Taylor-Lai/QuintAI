@@ -88,7 +88,15 @@ def index_document(db: Session, collection_id: str, document: DocumentRecord) ->
     return len(chunks)
 
 
-def hybrid_search(db: Session, collection_id: str, query: str, mode: str, limit: int) -> list[dict]:
+def hybrid_search(
+    db: Session,
+    collection_id: str,
+    query: str,
+    mode: str,
+    limit: int,
+    *,
+    graph_context: dict | None = None,
+) -> list[dict]:
     query_tokens = set(_tokens(query))
     query_vector = embed_text(query)
     rows = db.query(KnowledgeChunk).filter_by(collection_id=collection_id).all()
@@ -108,6 +116,9 @@ def hybrid_search(db: Session, collection_id: str, query: str, mode: str, limit:
             score = vector
         else:
             score = keyword * 0.45 + vector * 0.55
+        graph_document_ids = set((graph_context or {}).get("document_ids") or [])
+        graph_bonus = 0.12 if row.document_id in graph_document_ids else 0.0
+        score = min(1.0, score + graph_bonus)
         if score <= 0:
             continue
         document = documents.get(row.document_id)
@@ -119,6 +130,8 @@ def hybrid_search(db: Session, collection_id: str, query: str, mode: str, limit:
                 "score": round(score, 6),
                 "keyword_score": round(keyword, 6),
                 "vector_score": round(vector, 6),
+                "graph_score": graph_bonus,
+                "graph_paths": list((graph_context or {}).get("paths") or [])[:3] if graph_bonus else [],
                 "snippet": row.content[:500],
                 "citation": {**(row.location or {}), "document_id": row.document_id, "filename": document.filename if document else "未知文档"},
             }

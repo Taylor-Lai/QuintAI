@@ -1,18 +1,8 @@
-FROM node:22-bookworm-slim AS web-builder
-
-WORKDIR /build/web
-COPY frontend/package.json frontend/package-lock.json ./
-RUN npm ci --registry=https://registry.npmmirror.com
-COPY frontend/ ./
-RUN npm run build
-
-
 FROM python:3.11-slim AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     APP_ENV=production \
-    STATIC_DIR=/app/static \
     DATA_DIR=/app/data
 
 WORKDIR /app
@@ -26,7 +16,6 @@ RUN pip install --no-cache-dir --no-deps --no-build-isolation ./backend
 COPY alembic.ini ./alembic.ini
 COPY backend/alembic/ ./backend/alembic/
 
-COPY --from=web-builder /build/web/dist ./static/
 RUN addgroup --system app && adduser --system --ingroup app app \
     && mkdir -p /app/data \
     && chown -R app:app /app

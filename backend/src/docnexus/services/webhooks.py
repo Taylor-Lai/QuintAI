@@ -7,7 +7,7 @@ import hashlib
 import hmac
 import json
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import httpx
 from cryptography.fernet import Fernet
@@ -27,6 +27,20 @@ def decrypt_secret(ciphertext: str | None) -> str:
     if not ciphertext:
         raise ValueError("Webhook 缺少可用的签名密钥")
     return _cipher().decrypt(ciphertext.encode()).decode()
+
+
+def _enqueue_delivery(delivery_id: str) -> bool:
+    try:
+        celery_app.send_task("docnexus.deliver_webhook", args=[delivery_id])
+        return True
+    except Exception as exc:
+        with SessionLocal() as db:
+            delivery = db.get(WebhookDelivery, delivery_id)
+            if delivery is not None:
+                delivery.status = "queue_failed"
+                delivery.error_message = str(exc)[:1000]
+                db.commit()
+        return False
 
 
 def publish_event(organization_id: str | None, event: str, payload: dict) -> list[str]:
@@ -53,12 +67,34 @@ def publish_event(organization_id: str | None, event: str, payload: dict) -> lis
             delivery_ids.append(delivery.id)
         db.commit()
     for delivery_id in delivery_ids:
-        try:
-            celery_app.send_task("docnexus.deliver_webhook", args=[delivery_id])
-        except Exception:
-            # The queued record remains visible and can be retried after Redis recovers.
-            pass
+        _enqueue_delivery(delivery_id)
     return delivery_ids
+
+
+def recover_webhook_deliveries(limit: int = 100) -> int:
+    """Requeue broker failures, exhausted transient failures, and stale queued records."""
+    cutoff = datetime.now() - timedelta(minutes=2)
+    with SessionLocal() as db:
+        rows = (
+            db.query(WebhookDelivery)
+            .filter(
+                WebhookDelivery.attempts < 3,
+                (
+                    WebhookDelivery.status.in_(["queue_failed", "failed"])
+                    | ((WebhookDelivery.status == "queued") & (WebhookDelivery.updated_at < cutoff))
+                ),
+            )
+            .order_by(WebhookDelivery.updated_at.asc())
+            .limit(limit)
+            .all()
+        )
+        delivery_ids = [row.id for row in rows]
+        for row in rows:
+            row.status = "queued"
+            row.error_message = None
+            row.updated_at = datetime.now()
+        db.commit()
+    return sum(1 for delivery_id in delivery_ids if _enqueue_delivery(delivery_id))
 
 
 @celery_app.task(bind=True, name="docnexus.deliver_webhook", max_retries=2)

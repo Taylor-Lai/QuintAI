@@ -688,10 +688,6 @@ import {
   waitForTask,
   downloadTaskApi
 } from '../api/feature'
-import { useUserStore } from '../stores/user'
-
-const userStore = useUserStore()
-
 const ACTIVE_TEMPLATE_STORAGE_KEY = 'active_template_for_table_fill_v1'
 
 const props = defineProps({
@@ -736,13 +732,6 @@ const progress = ref(0)
 const progressText = ref('正在准备任务...')
 const completedSteps = ref(0)
 const totalSteps = ref(1)
-
-const typeNameMap = {
-  'doc-chat': '文档智能操作交互',
-  'doc-extract': '非结构化文档信息提取',
-  'table-fill': '表格自定义数据填写'
-}
-
 
 const activeTemplateFieldLabels = computed(() => {
   const template = activeTemplateMeta.value
@@ -1120,13 +1109,6 @@ const handleDocChatUpload = async () => {
     const normalizedRes = await waitForSubmittedTask(submission, fallbackFileName)
     resultData.value = normalizedRes
 
-    userStore.addHistoryRecord({
-      fileName: selectedFile.value.name,
-      type: typeNameMap[props.type],
-      time: new Date().toLocaleString(),
-      status: '已完成',
-      summary: getSummaryFromResponse(normalizedRes) || commandText.value.trim()
-    })
   } catch (error) {
     alert(error?.message || '上传失败')
   } finally {
@@ -1160,13 +1142,6 @@ const handleDocExtractUpload = async () => {
     const normalizedRes = await waitForSubmittedTask(submission, extractFile.value.name)
     resultData.value = normalizedRes
 
-    userStore.addHistoryRecord({
-      fileName: extractFile.value.name,
-      type: typeNameMap[props.type],
-      time: new Date().toLocaleString(),
-      status: '已完成',
-      summary: getSummaryFromResponse(normalizedRes) || fieldsText.value.trim()
-    })
   } catch (error) {
     alert(error?.message || '上传失败')
   } finally {
@@ -1206,18 +1181,6 @@ const handleTableFillUpload = async () => {
     const normalizedRes = await waitForSubmittedTask(submission, fallbackFileName)
     resultData.value = normalizedRes
 
-    const templateSourceName =
-      selectedTemplateFile.value?.name ||
-      activeTemplateMeta.value?.name ||
-      templateFile.name
-
-    userStore.addHistoryRecord({
-      fileName: `${templateSourceName} / ${tableFillDocumentFiles.value.map((file) => file.name).join(', ')}`,
-      type: typeNameMap[props.type],
-      time: new Date().toLocaleString(),
-      status: '已完成',
-      summary: getSummaryFromResponse(normalizedRes) || '表格填写完成'
-    })
   } catch (error) {
     alert(error?.message || '上传失败')
   } finally {
