@@ -18,7 +18,7 @@ Windows 项目路径建议使用纯 ASCII 字符。Android Gradle Plugin 已允�
 Copy-Item .env.example .env
 ```
 
-至少应替换 `SECRET_KEY`。使用真实模型时，还需为 `LLM_PROVIDER` 配置相应凭据。`.env`、发布签名和任何真实密钥都不得提交。
+至少应替换 `SECRET_KEY`。使用真实模型时，还需填写 `LLM_PROVIDER`、`OPENAI_API_KEY`、`OPENAI_BASE_URL` 和 `OPENAI_MODEL`；示例文件故意不绑定具体模型名称，实际值以供应商当前可用模型为准。`.env`、发布签名和任何真实密钥都不得提交。
 
 ## 方式一：Docker Compose
 

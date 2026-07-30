@@ -127,8 +127,9 @@ class AppViewModel(private val repository: HuiwenRongtongRepository) : ViewModel
 
     fun createDemoRun(onCreated: (String) -> Unit) = launchAction {
         val taskId = repository.createDemoRun()
-        refreshTasks()
+        replaceTask(repository.task(taskId))
         onCreated(taskId)
+        pollTask(taskId)
     }
 
     fun uploadWorkspaceDocuments(uris: List<Uri>, category: String, tags: String) = launchAction {

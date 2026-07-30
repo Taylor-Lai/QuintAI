@@ -14,6 +14,7 @@
 ## 运维与质量
 
 - [部署与运维](operations/deployment.md)：Compose、健康检查、升级、日志和备份恢复；
+- [发布就绪检查](release-readiness.md)：发布门槛、当前验证结果和交付前剩余事项；
 - [人工验收测试](../tests/manual/README.md)：Web 与 Android 的跨端业务验收；
 - [贡献指南](../CONTRIBUTING.md)；
 - [安全策略](../SECURITY.md)；

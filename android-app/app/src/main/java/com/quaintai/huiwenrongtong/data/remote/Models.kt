@@ -1,6 +1,6 @@
 package com.quaintai.huiwenrongtong.data.remote
 
-import com.google.gson.JsonObject
+import com.google.gson.JsonElement
 import com.google.gson.annotations.SerializedName
 
 data class LoginRequest(val email: String, val password: String)
@@ -40,13 +40,13 @@ data class TaskDto(
     val stage: String = "",
     @SerializedName("has_file") val hasFile: Boolean = false,
     val filename: String? = null,
-    val result: JsonObject? = null,
+    val result: JsonElement? = null,
     val error: TaskError? = null,
     val attempts: Int = 0,
     @SerializedName("created_at") val createdAt: String = "",
     @SerializedName("completed_at") val completedAt: String? = null,
-    @SerializedName("quality_report") val qualityReport: JsonObject? = null,
-    @SerializedName("evidence_summary") val evidenceSummary: JsonObject? = null,
+    @SerializedName("quality_report") val qualityReport: JsonElement? = null,
+    @SerializedName("evidence_summary") val evidenceSummary: JsonElement? = null,
     val events: List<TaskEvent>? = emptyList(),
 )
 

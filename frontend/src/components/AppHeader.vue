@@ -129,6 +129,16 @@
 
       </nav>
 
+      <button
+        class="mobile-menu-btn"
+        type="button"
+        aria-label="打开导航菜单"
+        :aria-expanded="mobileMenuOpen"
+        @click="mobileMenuOpen = !mobileMenuOpen"
+      >
+        {{ mobileMenuOpen ? '×' : '☰' }}
+      </button>
+
       <div class="header-actions">
         <template v-if="userStore.isLogin">
           <span class="user-name">你好，{{ userStore.username }}</span>
@@ -155,6 +165,22 @@
           <button class="trial-btn" @click="goAuth">登录/注册</button>
         </template>
       </div>
+
+      <transition name="mobile-menu-fade">
+        <nav v-if="mobileMenuOpen" class="mobile-nav" aria-label="移动端导航">
+          <button type="button" @click="goHome">首页</button>
+          <button type="button" @click="goWorkspace">智能工作台</button>
+          <button type="button" @click="goFeature('/feature/doc-chat')">文档智能操作</button>
+          <button type="button" @click="goFeature('/feature/doc-extract')">信息提取</button>
+          <button type="button" @click="goFeature('/feature/table-fill')">复杂表格填写</button>
+          <button type="button" @click="goTemplate">模板库</button>
+          <button type="button" @click="goEditor">在线编辑</button>
+          <button type="button" @click="goGuide">上手指南</button>
+          <button v-if="userStore.isLogin" type="button" class="mobile-logout" @click="handleLogout">
+            退出登录
+          </button>
+        </nav>
+      </transition>
     </div>
   </header>
 </template>
@@ -170,6 +196,7 @@ const userStore = useUserStore()
 
 const showMenu = ref(false)
 const showMoreMenu = ref(false)
+const mobileMenuOpen = ref(false)
 const logoutLoading = ref(false)
 
 const isAdmin = computed(() => {
@@ -194,20 +221,24 @@ const isGuidePage = computed(() => route.path === '/guide')
 const isWorkspacePage = computed(() => route.path.startsWith('/workspace'))
 
 const goWorkspace = () => {
+  mobileMenuOpen.value = false
   router.push(userStore.isLogin ? '/workspace' : '/auth')
 }
 
 const goHome = () => {
   showMenu.value = false
   showMoreMenu.value = false
+  mobileMenuOpen.value = false
   router.push('/')
 }
 
 const goAuth = () => {
+  mobileMenuOpen.value = false
   router.push('/auth')
 }
 
 const goProfile = () => {
+  mobileMenuOpen.value = false
   if (userStore.isLogin) {
     router.push('/profile')
   } else {
@@ -216,12 +247,14 @@ const goProfile = () => {
 }
 
 const goAdmin = () => {
+  mobileMenuOpen.value = false
   router.push('/admin')
 }
 
 const goFeature = (path) => {
   showMenu.value = false
   showMoreMenu.value = false
+  mobileMenuOpen.value = false
 
   if (userStore.isLogin) {
     router.push(path)
@@ -233,18 +266,21 @@ const goFeature = (path) => {
 const goTemplate = () => {
   showMenu.value = false
   showMoreMenu.value = false
+  mobileMenuOpen.value = false
   router.push('/template')
 }
 
 const goEditor = () => {
   showMenu.value = false
   showMoreMenu.value = false
+  mobileMenuOpen.value = false
   router.push('/editor')
 }
 
 const goGuide = () => {
   showMoreMenu.value = false
   showMenu.value = false
+  mobileMenuOpen.value = false
   router.push('/guide')
 }
 
@@ -261,6 +297,7 @@ const handleLogout = async () => {
   } catch (error) {
     console.error('后端退出接口调用失败：', error)
   } finally {
+    mobileMenuOpen.value = false
     router.push('/')
     logoutLoading.value = false
   }
@@ -459,6 +496,11 @@ const handleLogout = async () => {
   flex-shrink: 0;
 }
 
+.mobile-menu-btn,
+.mobile-nav {
+  display: none;
+}
+
 .user-name {
   font-size: 14px;
   color: #555;
@@ -521,6 +563,14 @@ const handleLogout = async () => {
 }
 
 @media (max-width: 900px) {
+  .container {
+    max-width: calc(100% - 24px);
+  }
+
+  .header-inner {
+    gap: 12px;
+  }
+
   .nav {
     display: none;
   }
@@ -537,10 +587,78 @@ const handleLogout = async () => {
   .header-actions {
     width: auto;
     min-width: auto;
+    gap: 8px;
   }
 
   .user-name {
     display: none;
+  }
+
+  .mobile-menu-btn {
+    width: 38px;
+    height: 38px;
+    margin-left: auto;
+    border: 1px solid #d8c8ad;
+    border-radius: 10px;
+    background: #fffaf1;
+    color: #8f652b;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    line-height: 1;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+
+  .logout-btn,
+  .admin-btn {
+    display: none;
+  }
+
+  .mobile-nav {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 12px;
+    right: 12px;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    padding: 12px;
+    border: 1px solid #e5d7bf;
+    border-radius: 16px;
+    background: rgba(255, 253, 249, 0.98);
+    box-shadow: 0 18px 40px rgba(77, 58, 31, 0.16);
+    backdrop-filter: blur(14px);
+  }
+
+  .mobile-nav button {
+    min-height: 42px;
+    padding: 8px 10px;
+    border: 1px solid #eee2cf;
+    border-radius: 10px;
+    background: #fff;
+    color: #4f4437;
+    font-size: 14px;
+    cursor: pointer;
+  }
+
+  .mobile-nav .mobile-logout {
+    grid-column: 1 / -1;
+    color: #8a4d43;
+    background: #fff7f5;
+    border-color: #efd3ce;
+  }
+
+  .mobile-menu-fade-enter-active,
+  .mobile-menu-fade-leave-active {
+    transition: opacity 0.18s ease, transform 0.18s ease;
+  }
+
+  .mobile-menu-fade-enter-from,
+  .mobile-menu-fade-leave-to {
+    opacity: 0;
+    transform: translateY(-6px);
   }
 }
 </style>

@@ -152,11 +152,11 @@ fun TaskDetailScreen(
             }
         }
 
-        task.qualityReport?.takeIf { it.entrySet().isNotEmpty() }?.let { quality ->
+        task.qualityReport?.takeIf { it.isJsonObject }?.asJsonObject?.takeIf { it.entrySet().isNotEmpty() }?.let { quality ->
             item { SectionHeading("质量报告", "自动校验结果") }
             items(quality.entrySet().toList(), key = { it.key }) { entry -> ResultField(entry.key, entry.value.displayValue()) }
         }
-        task.evidenceSummary?.takeIf { it.entrySet().isNotEmpty() }?.let { evidence ->
+        task.evidenceSummary?.takeIf { it.isJsonObject }?.asJsonObject?.takeIf { it.entrySet().isNotEmpty() }?.let { evidence ->
             item { SectionHeading("证据摘要", "来源可追溯") }
             items(evidence.entrySet().toList(), key = { it.key }) { entry -> ResultField(entry.key, entry.value.displayValue()) }
         }
@@ -222,7 +222,9 @@ private fun ResultField(name: String, value: String) {
 }
 
 private fun TaskDto.extractedFields(): List<Pair<String, String>> {
-    val data = result?.getAsJsonObject("extracted_data") ?: return emptyList()
+    val resultObject = result?.takeIf { it.isJsonObject }?.asJsonObject ?: return emptyList()
+    val extractedData = resultObject.get("extracted_data") ?: return emptyList()
+    val data = extractedData.takeIf { it.isJsonObject }?.asJsonObject ?: return emptyList()
     return data.entrySet().asSequence()
         .filterNot { it.key == "_meta" || it.value.isJsonNull }
         .map { it.key to it.value.displayValue() }

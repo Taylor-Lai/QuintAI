@@ -49,6 +49,24 @@ def _operation_from_dict(raw: dict[str, object], index: int, target_fields: list
     params: dict[str, object] = dict(raw_params) if isinstance(raw_params, dict) else {}
     if "group_fields" in params and "group_by" not in params:
         params["group_by"] = params["group_fields"]
+    raw_sort_fields = params.get("fields")
+    if op == "sort" and "keys" not in params and isinstance(raw_sort_fields, list):
+        # Some OpenAI-compatible models emit ``fields`` for multi-key sorting.
+        # Normalize that common synonym to the executable TaskPlan contract.
+        normalized_keys: list[object] = []
+        for item in raw_sort_fields:
+            if isinstance(item, dict):
+                sort_key = dict(item)
+                raw_field = sort_key.get("field") or sort_key.get("by")
+                if raw_field:
+                    sort_key["field"] = _resolve_field(raw_field, target_fields) or raw_field
+                    sort_key.pop("by", None)
+                    normalized_keys.append(sort_key)
+            elif item not in (None, ""):
+                normalized_keys.append(_resolve_field(item, target_fields) or item)
+        if normalized_keys:
+            params["keys"] = normalized_keys
+        params.pop("fields", None)
     for key in ("field", "by", "group_by"):
         value = params.get(key)
         if isinstance(value, str):

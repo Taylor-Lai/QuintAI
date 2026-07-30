@@ -1250,7 +1250,10 @@ class VerifierAgent:
                 )
             )
             if normalized_status in {"warning", "fail"} and verification_report.status == "pass":
-                verification_report.status = normalized_status
+                # The LLM review is advisory. It can surface risks that deserve a
+                # warning, but an unsupported model verdict must not reject output
+                # that passed the deterministic schema, evidence, and task checks.
+                verification_report.status = "warning"
             if summary:
                 verification_report.summary = f"{verification_report.summary} LLM review: {summary}"
 

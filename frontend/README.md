@@ -2,6 +2,8 @@
 
 Web 客户端基于 Vue 3、Pinia、Vue Router、Axios、ECharts、fflate 和 Vite，覆盖认证、三类文档能力、任务中心、文档工作台和企业管理功能。
 
+桌面端使用完整顶部导航；900px 以下提供独立移动导航菜单，覆盖首页、工作台、三类文档能力、模板库、在线编辑和上手指南。修改公共导航或响应式样式后，应至少在 390×844 和 1280×720 两种视口回归。
+
 ## 开发
 
 ```powershell
@@ -18,6 +20,8 @@ npm run lint
 npm run build
 npm audit --omit=dev
 ```
+
+当前仓库尚未引入 Web 组件测试框架，发布前除 lint 和生产构建外，还必须按[人工验收套件](../tests/manual/README.md)在真实浏览器中执行核心流程。依赖审计会向 npm registry 发送依赖清单，应在允许联网的受控环境中运行。
 
 ## 目录约定
 

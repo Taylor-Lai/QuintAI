@@ -122,6 +122,7 @@ Set-Location ../android-app
 - [开发环境配置](docs/development/setup.md)
 - [仓库工程规范](docs/development/conventions.md)
 - [部署与运维](docs/operations/deployment.md)
+- [发布就绪检查](docs/release-readiness.md)
 - [贡献指南](CONTRIBUTING.md)
 - [安全策略](SECURITY.md)
 

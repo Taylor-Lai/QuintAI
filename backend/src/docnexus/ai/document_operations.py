@@ -81,6 +81,8 @@ def _split_command(command: str) -> list[str]:
 def _infer_target_paragraph_index(text: str) -> int | None:
     if any(token in text for token in ("全文", "全部", "所有")):
         return -1
+    if any(token in text for token in ("标题", "题目")):
+        return 0
     digit_match = re.search(r"第\s*(\d+)\s*段", text)
     if digit_match:
         return max(int(digit_match.group(1)) - 1, 0)
@@ -125,6 +127,32 @@ def _extract_quoted_pair(text: str) -> tuple[str | None, str | None]:
     return None, None
 
 
+def _is_formatting_change(text: str, replacement: str | None) -> bool:
+    """Distinguish style changes such as ``改成红色`` from text replacement."""
+    if not replacement:
+        return False
+    formatting_tokens = (
+        "加粗",
+        "取消加粗",
+        "字体",
+        "字号",
+        "颜色",
+        "红色",
+        "蓝色",
+        "绿色",
+        "黑色",
+        "居中",
+        "左对齐",
+        "右对齐",
+        "号",
+        "磅",
+        "pt",
+    )
+    return any(token.lower() in text.lower() for token in formatting_tokens) and any(
+        token.lower() in replacement.lower() for token in formatting_tokens
+    )
+
+
 def build_rule_based_plan(command: str) -> FormatPlan:
     actions: list[FormatAction] = []
     last_target_index = -1
@@ -140,7 +168,7 @@ def build_rule_based_plan(command: str) -> FormatPlan:
                 if match:
                     old_text = match.group(1).strip(" ，,。")
                     new_text = match.group(2).strip(" ，,。")
-            if old_text and new_text:
+            if old_text and new_text and not _is_formatting_change(part, new_text):
                 actions.append(FormatAction(operation="replace", target_paragraph_index=target_index, target_text=old_text, content=new_text))
                 continue
         if "删除" in part or "去掉" in part:
@@ -351,20 +379,24 @@ def _apply_insert_action(doc: Document, action: FormatAction) -> int:
     if not content:
         return 0
     paragraphs = [line.strip() for line in content.splitlines() if line.strip()] or [content]
+    existing_text = {paragraph.text.strip() for paragraph in doc.paragraphs if paragraph.text.strip()}
+    pending_paragraphs = [text for text in paragraphs if text not in existing_text]
+    if not pending_paragraphs:
+        return len(paragraphs)
     if action.target_paragraph_index == -2:
-        for text in paragraphs:
+        for text in pending_paragraphs:
             doc.add_paragraph(text)
     elif action.target_paragraph_index == 0 and doc.paragraphs:
-        for text in reversed(paragraphs):
+        for text in reversed(pending_paragraphs):
             doc.paragraphs[0].insert_paragraph_before(text)
     elif 0 <= action.target_paragraph_index < len(doc.paragraphs):
         anchor = doc.paragraphs[action.target_paragraph_index]
-        for text in reversed(paragraphs):
+        for text in reversed(pending_paragraphs):
             anchor.insert_paragraph_before(text)
     else:
-        for text in paragraphs:
+        for text in pending_paragraphs:
             doc.add_paragraph(text)
-    return len(paragraphs)
+    return len(pending_paragraphs)
 
 
 def _apply_delete_action(doc: Document, action: FormatAction) -> int:
@@ -397,7 +429,138 @@ def _apply_replace_action(doc: Document, action: FormatAction) -> int:
                 if target in cell.text:
                     cell.text = cell.text.replace(target, content)
                     changed += 1
+    # Treat a repeated semantic action as idempotently complete. The LLM plan
+    # can overlap with the deterministic safety-net plan (for example, both
+    # may rename the title), so the second action should not be reported as a
+    # missed edit when the requested content is already present.
+    if changed == 0 and content:
+        normalized_content = content.strip().strip("“”\"'").strip()
+        existing_text = [paragraph.text for paragraph in doc.paragraphs]
+        existing_text.extend(cell.text for table in doc.tables for row in table.rows for cell in row.cells)
+        if normalized_content and any(normalized_content in text for text in existing_text):
+            return 1
     return changed
+
+
+def _parse_table_content(content: str) -> list[list[str]]:
+    rows: list[list[str]] = []
+    for raw_line in content.splitlines():
+        line = raw_line.strip().strip("|")
+        if not line:
+            continue
+        delimiter = r"\|" if "|" in line else r"[，,]"
+        cells = [cell.strip() for cell in re.split(delimiter, line)]
+        if len(cells) < 2:
+            continue
+        if all(re.fullmatch(r":?-{3,}:?", cell) for cell in cells):
+            continue
+        rows.append(cells)
+    if len(rows) < 2:
+        return []
+    width = len(rows[0])
+    if width < 2 or any(len(row) != width for row in rows):
+        return []
+    return rows
+
+
+def _build_rule_based_table_action(command: str, doc: Document) -> FormatAction | None:
+    if "表格" not in command:
+        return None
+
+    header_match = re.search(
+        r"(?:整理|转换|转|改).*?成\s*(.+?)(?:[二三四五六七八九十\d]+列)?表格",
+        command,
+    )
+    if not header_match:
+        return None
+    headers = [value.strip() for value in re.split(r"[、，,/]+", header_match.group(1)) if value.strip()]
+    if len(headers) < 2:
+        return None
+
+    section_match = re.search(r"(?:把|将)\s*(.+?)(?:整理|转换|转|改).*?表格", command)
+    section_name = section_match.group(1).strip(" ，,") if section_match else ""
+    paragraphs = list(doc.paragraphs)
+    start_index = -1
+    if section_name:
+        start_index = next(
+            (index for index, paragraph in enumerate(paragraphs) if section_name in paragraph.text),
+            -1,
+        )
+
+    source_rows: list[list[str]] = []
+    for paragraph in paragraphs[start_index + 1 :] if start_index >= 0 else paragraphs:
+        text = paragraph.text.strip().rstrip("。.")
+        if not text:
+            continue
+        if len(headers) == 3:
+            row_match = re.match(r"^(.+?)负责(.+?)[，,]\s*(.+)$", text)
+            if row_match:
+                source_rows.append([value.strip() for value in row_match.groups()])
+                continue
+        parts = [value.strip() for value in re.split(r"[，,；;]", text) if value.strip()]
+        if len(parts) == len(headers):
+            source_rows.append(parts)
+
+    if not source_rows:
+        return None
+    content = "\n".join("|".join(row) for row in [headers, *source_rows])
+    return FormatAction(operation="structure", target_paragraph_index=-1, target_text="table", content=content)
+
+
+def _remove_paragraph(paragraph) -> None:
+    element = paragraph._element
+    parent = element.getparent()
+    if parent is not None:
+        parent.remove(element)
+
+
+def _apply_table_structure(doc: Document, content: str) -> int:
+    rows = _parse_table_content(content)
+    if not rows:
+        return 0
+
+    for existing_table in doc.tables:
+        existing_rows = [[cell.text.strip() for cell in row.cells] for row in existing_table.rows]
+        if existing_rows == rows:
+            return len(rows)
+
+    # Prefer placing a generated task table directly after the corresponding
+    # section heading instead of appending it after unrelated trailing text.
+    anchor = next(
+        (
+            paragraph
+            for paragraph in reversed(doc.paragraphs)
+            if paragraph.text.strip() and any(token in paragraph.text for token in ("待办", "事项", "任务", "行动项"))
+        ),
+        doc.paragraphs[-1] if doc.paragraphs else None,
+    )
+
+    table = doc.add_table(rows=len(rows), cols=len(rows[0]))
+    table.style = "Table Grid"
+    for row_index, row in enumerate(rows):
+        for column_index, value in enumerate(row):
+            cell = table.cell(row_index, column_index)
+            cell.text = value
+            if row_index == 0:
+                for run in cell.paragraphs[0].runs:
+                    run.bold = True
+
+    if anchor is not None:
+        anchor._p.addnext(table._tbl)
+
+    # Remove source prose that has been represented by a data row. Matching at
+    # least two cell values avoids deleting unrelated paragraphs that happen to
+    # mention only a person's name or a date.
+    for paragraph in list(doc.paragraphs):
+        text = paragraph.text.strip()
+        if not text or paragraph is anchor:
+            continue
+        for row in rows[1:]:
+            meaningful_cells = [cell for cell in row if len(cell) >= 2]
+            if sum(cell in text for cell in meaningful_cells) >= min(2, len(meaningful_cells)):
+                _remove_paragraph(paragraph)
+                break
+    return len(rows)
 
 
 def _apply_structure_action(doc: Document, action: FormatAction) -> int:
@@ -413,6 +576,8 @@ def _apply_structure_action(doc: Document, action: FormatAction) -> int:
         section = doc.sections[0]
         section.header.paragraphs[0].text = content
         return 1
+    if target.lower() in {"table", "表格"} and content:
+        return _apply_table_structure(doc, content)
     return 0
 
 
@@ -443,6 +608,10 @@ def _execute_action(doc: Document, action: FormatAction) -> tuple[str, int, dict
     return "format", changed, {}
 
 
+def _unresolved_action_reports(action_reports: list[dict[str, object]]) -> list[dict[str, object]]:
+    return [report for report in action_reports if report["affected_count"] == 0]
+
+
 def _write_operation_audit(
     doc_path: Path,
     output_path: Path,
@@ -460,7 +629,7 @@ def _write_operation_audit(
         "created_at": datetime.now().isoformat(timespec="seconds"),
         "action_count": len(actions),
         "actions": action_reports,
-        "missed_actions": [report for report in action_reports if report["affected_count"] == 0],
+        "missed_actions": _unresolved_action_reports(action_reports),
         "warnings": list(warnings or []),
     }
     audit_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -483,6 +652,9 @@ def handle_document_operation(input_data):
             build_rule_based_plan(input_data.natural_language_cmd),
             build_unicode_rule_based_plan(input_data.natural_language_cmd),
         )
+        table_action = _build_rule_based_table_action(input_data.natural_language_cmd, doc)
+        if table_action is not None:
+            rule_plan.actions.append(table_action)
         prompt = ChatPromptTemplate.from_messages([
             ("system", (
                 "你是一个文档智能操作助手。以下是文档的前几段预览：\n{preview}\n\n"
@@ -539,6 +711,14 @@ def handle_document_operation(input_data):
                 "content_preview": (action.content or "")[:120],
                 **extra,
             })
+
+        missed_actions = _unresolved_action_reports(action_reports)
+        if missed_actions:
+            missed_operations = "、".join(str(report["operation"]) for report in missed_actions)
+            return output_schema(
+                status="failed",
+                message=f"文档操作未完整执行，未生效动作：{missed_operations}。请调整指令后重试。",
+            )
 
         output_path = doc_path.parent / f"{doc_path.stem}_formatted{doc_path.suffix}"
         doc.save(output_path)

@@ -144,6 +144,39 @@ def test_compiler_enforces_request_sort_direction_and_limit_on_llm_plan() -> Non
     assert plan.operations[1].params["n"] == 2
 
 
+def test_compiler_normalizes_llm_multi_sort_fields_to_keys() -> None:
+    task = TaskSpec(
+        "task",
+        "fill_table",
+        "template",
+        target_fields=["国家/地区", "日期"],
+    )
+    result = {
+        "operations": [
+            {
+                "operation_id": "sort",
+                "op": "sort",
+                "params": {
+                    "fields": [
+                        {"field": "国家/地区", "order": "asc"},
+                        {"field": "日期", "order": "asc"},
+                    ]
+                },
+            }
+        ]
+    }
+
+    plan = compile_task_understanding(task, result)
+
+    assert plan.validation_errors == []
+    assert plan.operations[0].params == {
+        "keys": [
+            {"field": "国家/地区", "order": "asc"},
+            {"field": "日期", "order": "asc"},
+        ]
+    }
+
+
 def test_validator_rejects_duplicate_ids_unknown_dependencies_and_cycles() -> None:
     plan = TaskPlan(
         operations=[

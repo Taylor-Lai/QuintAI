@@ -4,8 +4,17 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from docnexus.ai.document_operations import FormatAction, build_rule_based_plan
+from docnexus.ai.document_operations import (
+    FormatAction,
+    _apply_insert_action,
+    _apply_replace_action,
+    _apply_structure_action,
+    _build_rule_based_table_action,
+    _unresolved_action_reports,
+    build_rule_based_plan,
+)
 from docnexus.ai.information_extraction import merge_chunk_extractions
+from docx import Document
 
 
 class DocumentOperationModelTests(unittest.TestCase):
@@ -39,6 +48,137 @@ class DocumentOperationModelTests(unittest.TestCase):
         self.assertEqual(plan.actions[0].target_paragraph_index, 0)
         self.assertTrue(plan.actions[0].bold)
         self.assertEqual(plan.actions[0].color_hex, "#FF0000")
+
+    def test_rule_plan_does_not_treat_color_changes_as_text_replacement(self) -> None:
+        plan = build_rule_based_plan(
+            "\u5168\u6587\u5c45\u4e2d\uff1b\u5c06\u6807\u9898\u8bbe\u7f6e\u4e3a\u52a0\u7c97\u5e76\u6539\u6210\u7ea2\u8272\uff1b"
+            "\u5c06\u7b2c2\u6bb5\u8bbe\u7f6e\u4e3a16\u53f7\u5e76\u6539\u6210\u84dd\u8272\u3002"
+        )
+
+        self.assertNotIn("replace", [action.operation for action in plan.actions])
+        self.assertTrue(any(action.target_paragraph_index == -1 and action.alignment == "center" for action in plan.actions))
+        self.assertTrue(
+            any(
+                action.target_paragraph_index == 0 and action.bold and action.color_hex == "#FF0000"
+                for action in plan.actions
+            )
+        )
+        self.assertTrue(
+            any(
+                action.target_paragraph_index == 1 and action.font_size == 16 and action.color_hex == "#0000FF"
+                for action in plan.actions
+            )
+        )
+
+    def test_replace_action_is_idempotent_when_content_already_exists(self) -> None:
+        doc = Document()
+        doc.add_paragraph("第 29 周产品例会纪要")
+
+        changed = _apply_replace_action(
+            doc,
+            FormatAction(operation="replace", target_text="标题", content="第 29 周产品例会纪要"),
+        )
+
+        self.assertEqual(changed, 1)
+
+        quoted_changed = _apply_replace_action(
+            doc,
+            FormatAction(operation="replace", target_text="标题", content="“第 29 周产品例会纪要”"),
+        )
+        self.assertEqual(quoted_changed, 1)
+
+    def test_insert_action_is_idempotent_when_content_already_exists(self) -> None:
+        doc = Document()
+        doc.add_paragraph("下次会议：2026 年 7 月 28 日 10:00")
+
+        changed = _apply_insert_action(
+            doc,
+            FormatAction(operation="insert", content="下次会议：2026 年 7 月 28 日 10:00"),
+        )
+
+        self.assertEqual(changed, 1)
+        self.assertEqual(
+            [p.text for p in doc.paragraphs],
+            ["下次会议：2026 年 7 月 28 日 10:00"],
+        )
+
+    def test_structure_action_builds_table_and_replaces_source_rows(self) -> None:
+        doc = Document()
+        doc.add_paragraph("待办事项")
+        doc.add_paragraph("林晓宇负责准备演示数据，周四完成。")
+        doc.add_paragraph("陈嘉负责修复移动端布局，周三完成。")
+
+        changed = _apply_structure_action(
+            doc,
+            FormatAction(
+                operation="structure",
+                target_text="table",
+                content="负责人|事项|截止日期\n林晓宇|准备演示数据|周四完成\n陈嘉|修复移动端布局|周三完成",
+            ),
+        )
+
+        self.assertEqual(changed, 3)
+        self.assertEqual(len(doc.tables), 1)
+        self.assertEqual(
+            [[cell.text for cell in row.cells] for row in doc.tables[0].rows],
+            [
+                ["负责人", "事项", "截止日期"],
+                ["林晓宇", "准备演示数据", "周四完成"],
+                ["陈嘉", "修复移动端布局", "周三完成"],
+            ],
+        )
+        self.assertNotIn("林晓宇负责准备演示数据，周四完成。", [p.text for p in doc.paragraphs])
+
+    def test_rule_based_table_action_uses_section_rows(self) -> None:
+        doc = Document()
+        doc.add_paragraph("待办事项")
+        doc.add_paragraph("林晓宇负责准备演示数据，周四完成。")
+        doc.add_paragraph("陈嘉负责修复移动端布局，周三完成。")
+
+        action = _build_rule_based_table_action(
+            "把待办事项整理成负责人、事项、截止日期三列表格",
+            doc,
+        )
+
+        self.assertIsNotNone(action)
+        assert action is not None
+        self.assertEqual(action.target_text, "table")
+        self.assertEqual(
+            action.content,
+            "负责人|事项|截止日期\n林晓宇|准备演示数据|周四完成\n陈嘉|修复移动端布局|周三完成",
+        )
+
+    def test_structure_action_accepts_comma_delimited_llm_content_idempotently(self) -> None:
+        doc = Document()
+        first_action = FormatAction(
+            operation="structure",
+            target_text="table",
+            content="负责人|事项|截止日期\n林晓宇|准备演示数据|周四完成",
+        )
+        duplicate_action = FormatAction(
+            operation="structure",
+            target_text="table",
+            content="负责人,事项,截止日期\n林晓宇,准备演示数据,周四完成",
+        )
+
+        self.assertEqual(_apply_structure_action(doc, first_action), 2)
+        self.assertEqual(_apply_structure_action(doc, duplicate_action), 2)
+        self.assertEqual(len(doc.tables), 1)
+
+    def test_each_zero_effect_action_remains_unresolved(self) -> None:
+        reports = [
+            {"operation": "replace", "affected_count": 1},
+            {"operation": "replace", "affected_count": 0},
+            {"operation": "structure", "affected_count": 0},
+        ]
+
+        self.assertEqual(
+            _unresolved_action_reports(reports),
+            [
+                {"operation": "replace", "affected_count": 0},
+                {"operation": "structure", "affected_count": 0},
+            ],
+        )
 
 
 class InformationExtractionMetadataTests(unittest.TestCase):
