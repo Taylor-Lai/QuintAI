@@ -12,7 +12,7 @@ src/docnexus/
 |-- db/                      # SQLAlchemy 模型、会话与初始化
 |-- repositories/            # 带所有权隔离的持久化操作
 |-- schemas/                 # HTTP 数据契约
-|-- services/                # 文件、质量、调度和企业服务
+|-- services/                # 文件解析、质量、调度、企业和回调服务
 |-- worker/                  # Celery 异步任务
 `-- main.py                  # ASGI 应用入口
 ```

@@ -20,7 +20,7 @@
 
 ## 技术架构
 
-- Web：Vue 3、Pinia、Vue Router、Axios、ECharts、Vite；
+- Web：Vue 3、Pinia、Vue Router、Axios、Vite；
 - Android：Kotlin、Jetpack Compose、ViewModel、Repository、Retrofit；
 - 后端：FastAPI、SQLAlchemy、Pydantic、Alembic；
 - AI 工作流：LangChain、LangGraph、规则、RAG 与 Agent Skill；
@@ -65,59 +65,23 @@ docker compose ps
 
 Compose 会启动 API、Worker、调度器、PostgreSQL 和 Redis。首次启动及重新构建可能需要下载镜像和依赖。
 
-## 本地开发
+## 使用与维护入口
 
-### 后端
+| 你的目标 | 建议阅读 | 可以解决的问题 |
+| --- | --- | --- |
+| 了解并使用产品 | [使用指南](docs/user-guide.md) | 登录、三类文档任务、任务结果和常见问题 |
+| 在本机启动完整系统 | [开发环境配置](docs/development/setup.md) | 环境变量、Docker、本地服务和基础验证 |
+| 部署和维护服务 | [部署与运维](docs/operations/deployment.md) | HTTPS、迁移、容器、备份、监控和发布配置 |
+| 构建 Android 客户端 | [Android 原生端说明](android-app/README.md) | 模拟器、真机、API 地址、构建与签名 |
+| 修改或扩展项目 | [文档中心](docs/README.md) | 架构、后端、Web、Android 和工程约定 |
+| 验证候选版本 | [发布就绪检查](docs/release-readiness.md) | 自动化门禁、真实模型验收和跨端人工回归 |
 
-```powershell
-conda env create -f environment.yml
-conda activate huiwen-rongtong
-python -m pip install --no-deps -e backend
-Copy-Item .env.example .env
-python -m alembic upgrade head
-uvicorn docnexus.main:app --host 127.0.0.1 --port 8000 --reload
-```
-
-异步任务还需要 Redis 和 Worker：
-
-```powershell
-celery -A docnexus.worker.celery_app:celery_app worker --loglevel=INFO
-```
-
-### Web
-
-```powershell
-Set-Location frontend
-npm install
-npm run dev
-```
-
-### Android
-
-使用 Android Studio 打开 `android-app` 目录。模拟器调试包默认访问宿主机 `http://10.0.2.2:8000/`；真机联调、签名和正式构建请参阅 [Android 开发指南](android-app/README.md)。
-
-## 质量检查
-
-```powershell
-pytest -m "not api_acceptance" --cov=docnexus --cov-fail-under=59
-ruff check backend scripts
-mypy
-python scripts/evaluate_table_engine.py
-
-Set-Location frontend
-npm run lint
-npm run build
-npm audit --omit=dev
-
-Set-Location ../android-app
-./gradlew.bat :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
-```
-
-真实模型验收位于 `backend/tests/acceptance`，需要单独配置模型凭据。跨端人工验收材料位于 [tests/manual](tests/manual/README.md)。
+代码布局、命名和变更要求统一见[仓库工程规范](docs/development/conventions.md)。
 
 ## 文档导航
 
 - [文档索引](docs/README.md)
+- [使用指南](docs/user-guide.md)
 - [系统架构](docs/architecture/overview.md)
 - [开发环境配置](docs/development/setup.md)
 - [仓库工程规范](docs/development/conventions.md)

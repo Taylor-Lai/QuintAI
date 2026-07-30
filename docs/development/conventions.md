@@ -22,7 +22,7 @@
 - `backend/src/docnexus/core`：配置、安全、限流与可观测性；
 - `backend/src/docnexus/db`：SQLAlchemy 模型和会话；
 - `backend/src/docnexus/repositories`：带用户或组织隔离的数据访问；
-- `backend/src/docnexus/services`：跨领域应用编排；
+- `backend/src/docnexus/services`：文件解析、质量校验、调度、企业能力和外部回调；
 - `backend/src/docnexus/ai`：AI 工作流、算法与运行时 Skill，不得反向依赖 API 路由；
 - `frontend/src/views`、`components`、`stores`、`api`：分别承载页面、组件、状态和 HTTP 客户端；
 - `android-app`：UI 通过 ViewModel 调用 Repository，不在 Composable 中直接实现网络或持久化逻辑。
@@ -35,6 +35,14 @@
 - 可观察行为应包含自动化测试；无法自动化的跨端场景应更新 `tests/manual`；
 - 架构、部署、构建或操作方式变化时，必须同步更新对应 README；
 - 不得提交密钥、真实用户数据、上传文件、报告、数据库、虚拟环境、依赖目录或构建产物。
+
+## 文档边界
+
+- 根 `README.md` 只维护产品、仓库和职责入口，不重复各端的完整命令；
+- `backend/README.md`、`frontend/README.md` 和 `android-app/README.md` 分别维护端内开发与检查方法；
+- `docs/architecture` 解释稳定的组件关系，`docs/development` 说明开发约定，`docs/operations` 说明部署运行；
+- `docs/release-readiness.md` 记录发布门槛和当次验证事实，不替代长期开发说明；
+- `tests/manual` 只保存可复现的验收材料和期望结果，不保存真实用户数据或临时截图。
 
 ## 提交前检查
 

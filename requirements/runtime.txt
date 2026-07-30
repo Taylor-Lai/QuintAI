@@ -19,7 +19,6 @@ chromadb==1.5.2
 click==8.3.1
 colorama==0.4.6
 cryptography==46.0.5
-dashscope==1.25.13
 distro==1.9.0
 dnspython==2.8.0
 durationpy==0.10
