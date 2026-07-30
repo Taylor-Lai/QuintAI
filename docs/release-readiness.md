@@ -17,10 +17,11 @@
 
 验证环境：Windows、Docker Desktop、PostgreSQL 16、Redis 7、生产模式 FastAPI + Celery、真实浏览器、真实模型调用。
 
-- 后端：143 项非 API-acceptance 测试通过，清理废弃实现后覆盖率为 60.88%；8 项真实模型压力验收全部通过，覆盖 Word 复杂格式、信息提取和多源 Excel 填表；
+- 后端：144 项非 API-acceptance 测试通过，覆盖率为 60.97%；8 项真实模型压力验收全部通过，覆盖 Word 复杂格式、信息提取和多源 Excel 填表；
 - 静态检查：Ruff、Python 字节码编译和 CI 配置覆盖的 46 个核心文件 Mypy 检查通过；
-- Web：Oxlint、ESLint、Vite 生产构建通过；`npm audit --omit=dev` 检查生产依赖，结果为 0 个已知漏洞；
+- Web：Oxlint、ESLint、Vitest 组件测试和 Vite 生产构建通过；Playwright 在桌面 Chromium 与 Pixel 7 移动视口完成 4 项核心浏览器流程；`npm audit` 检查全部依赖，结果为 0 个已知漏洞；
 - 容器：API、Worker、PostgreSQL、Redis 健康，Scheduler 正常运行；
+- LangGraph：Checkpoint 升级到 4.1.1，启动日志不再出现 `allowed_objects` 默认值变更提示，并增加依赖兼容性回归测试；
 - 认证：注册、登录、受保护路由和未知路由回退通过；
 - 工作台：一键演示从真实节点推进到 100%，生成证据摘要、质量报告、文档、复核任务和工作流；
 - 信息提取：入门员工材料的 7 个字段全部识别，结果与期望语义一致；
@@ -34,7 +35,6 @@
 
 | 责任角色 | 事项 | 发布影响 |
 | --- | --- | --- |
-| Web 开发 | 增加组件级和浏览器级持续集成测试；当前已有 lint、生产构建和人工浏览器验收 | 不阻断演示，正式长期维护前建议补齐 |
 | Android / 发布 | 在至少一台实体设备完成业务回归，并使用组织发布密钥验证 AAB/APK | 阻断应用商店发布 |
 | 运维 | 配置正式域名、HTTPS、CORS、备份恢复、模型配额和告警 | 阻断生产部署 |
 | 后端开发 | 提高认证、任务下载、企业管理和工作台写入路径覆盖率 | 当前满足 59% CI 门槛，属于后续质量改进 |

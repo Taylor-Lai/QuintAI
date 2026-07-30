@@ -17,11 +17,16 @@ npm run dev
 
 ```powershell
 npm run lint
+npm run test:unit
 npm run build
-npm audit --omit=dev
+npm audit
+npx playwright install chromium
+npm run test:e2e
 ```
 
-当前仓库尚未引入 Web 组件测试框架，发布前除 lint 和生产构建外，还必须按[人工验收套件](../tests/manual/README.md)在真实浏览器中执行核心流程。依赖审计会向 npm registry 发送依赖清单，应在允许联网的受控环境中运行。
+组件测试使用 Vitest 和 jsdom，覆盖组件渲染、表单交互、路由与登录状态分支。浏览器测试使用 Playwright，在桌面 Chromium 和 Pixel 7 移动视口中验证首页、指南、路由保护和登录流程；GitHub CI 会在每次推送和拉取请求中持续执行。
+
+首次运行浏览器测试前需要通过 `npx playwright install chromium` 安装测试浏览器。自动化测试不会替代涉及真实模型、文件结果和发布环境的[人工验收套件](../tests/manual/README.md)。依赖安装与审计会向 npm registry 发送依赖清单，应在允许联网的受控环境中运行。
 
 ## 目录约定
 
@@ -30,6 +35,8 @@ npm audit --omit=dev
 - `src/stores`：Pinia 状态与业务动作；
 - `src/api`：HTTP 客户端和接口封装；
 - `src/router`：路由、鉴权与页面入口。
+- `tests/unit`：无需后端的组件级测试；
+- `tests/e2e`：由 Playwright 执行的核心浏览器流程。
 
 页面不应直接散落请求地址或令牌逻辑。公开接口变更必须同步检查 Android 调用方和后端契约测试。
 
