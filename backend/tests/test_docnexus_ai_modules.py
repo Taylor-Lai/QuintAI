@@ -8,6 +8,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from docnexus.ai.contracts import DocumentOperationInput
 from docnexus.ai.document_operations import (
+    DocumentAction,
+    DocumentOperationPlan,
     FormatAction,
     _apply_insert_action,
     _apply_replace_action,
@@ -49,6 +51,13 @@ def _document_test_snapshot(doc: Document) -> dict[str, object]:
 
 
 class DocumentOperationModelTests(unittest.TestCase):
+    def test_document_operation_models_keep_legacy_aliases(self) -> None:
+        self.assertIs(FormatAction, DocumentAction)
+        self.assertEqual(
+            DocumentOperationPlan(actions=[DocumentAction(operation="delete")]).actions[0].operation,
+            "delete",
+        )
+
     def test_manual_document_fixtures_match_canonical_outputs(self) -> None:
         fixture_root = Path(__file__).resolve().parents[2] / "tests" / "manual" / "02-文档编辑"
         with tempfile.TemporaryDirectory() as tmp:
@@ -121,6 +130,21 @@ class DocumentOperationModelTests(unittest.TestCase):
         self.assertEqual(plan.actions[0].operation, "format")
         self.assertEqual(plan.actions[0].target_paragraph_index, 0)
         self.assertTrue(plan.actions[0].bold)
+        self.assertEqual(plan.actions[0].color_hex, "#FF0000")
+
+    def test_rule_plan_handles_comma_separated_styles_without_duplicate_parser(self) -> None:
+        plan = build_rule_based_plan("第一段加粗，居中")
+
+        self.assertEqual(len(plan.actions), 1)
+        self.assertEqual(plan.actions[0].target_paragraph_index, 0)
+        self.assertTrue(plan.actions[0].bold)
+        self.assertEqual(plan.actions[0].alignment, "center")
+
+    def test_rule_plan_recognizes_first_paragraph_alias(self) -> None:
+        plan = build_rule_based_plan("首段设为红色")
+
+        self.assertEqual(len(plan.actions), 1)
+        self.assertEqual(plan.actions[0].target_paragraph_index, 0)
         self.assertEqual(plan.actions[0].color_hex, "#FF0000")
 
     def test_rule_plan_does_not_treat_color_changes_as_text_replacement(self) -> None:

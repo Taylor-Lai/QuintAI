@@ -27,7 +27,7 @@ def _schema_classes():
     return DocumentOperationOutput
 
 
-class FormatAction(BaseModel):
+class DocumentAction(BaseModel):
     operation: str = Field("format", description="操作类型: format, insert, delete, replace, merge, extract, structure")
     target_paragraph_index: int = Field(-1, description="要修改的段落索引(从0开始，如果是全文则填 -1)")
     target_text: str | None = Field(None, description="要查找或操作的目标文本")
@@ -38,8 +38,8 @@ class FormatAction(BaseModel):
     alignment: str | None = Field(None, description="对齐方式: 'left', 'center', 'right'")
 
 
-class FormatPlan(BaseModel):
-    actions: list[FormatAction] = Field(default_factory=list, description="格式修改动作列表，若无需修改则为空列表")
+class DocumentOperationPlan(BaseModel):
+    actions: list[DocumentAction] = Field(default_factory=list, description="文档操作动作列表，若无需修改则为空列表")
 
     @model_validator(mode="before")
     @classmethod
@@ -48,6 +48,12 @@ class FormatPlan(BaseModel):
             val = data["action"]
             data["actions"] = val if isinstance(val, list) else []
         return data
+
+
+# Backward-compatible names for integrations using the original, overly
+# narrow terminology. New code should use the document-operation names above.
+FormatAction = DocumentAction
+FormatPlan = DocumentOperationPlan
 
 
 def _parse_format_plan_response(response: object) -> FormatPlan:
@@ -93,14 +99,16 @@ COLOR_MAP = {
 
 
 def _split_command(command: str) -> list[str]:
-    parts = re.split(r"[；;。\n]+|然后|并且|同时|最后|接着|随后|再", command)
-    return [part.strip(" ，,") for part in parts if part.strip(" ，,")]
+    parts = re.split(r"[，,；;。\n]+|然后|并且|同时|最后|接着|随后|再", command)
+    return [part.strip() for part in parts if part.strip()]
 
 
 def _infer_target_paragraph_index(text: str) -> int | None:
     if any(token in text for token in ("全文", "全部", "所有")):
         return -1
     if any(token in text for token in ("标题", "题目")):
+        return 0
+    if any(token in text for token in ("第一段", "首段")):
         return 0
     digit_match = re.search(r"第\s*(\d+)\s*段", text)
     if digit_match:
@@ -260,94 +268,6 @@ def build_rule_based_plan(command: str) -> FormatPlan:
                 previous.alignment = new_action.alignment if new_action.alignment is not None else previous.alignment
             else:
                 actions.append(new_action)
-    return FormatPlan(actions=actions)
-
-
-def _contains_any(text: str, tokens: tuple[str, ...]) -> bool:
-    return any(token in text for token in tokens)
-
-
-def _infer_unicode_target_paragraph_index(text: str) -> int | None:
-    if _contains_any(text, ("\u5168\u6587", "\u5168\u90e8", "\u6240\u6709")):
-        return -1
-    if _contains_any(text, ("\u6807\u9898", "\u9898\u76ee")):
-        return 0
-    if _contains_any(text, ("\u7b2c\u4e00\u6bb5", "\u9996\u6bb5")):
-        return 0
-    match = re.search(r"\u7b2c\s*(\d+)\s*\u6bb5", text)
-    if match:
-        return max(int(match.group(1)) - 1, 0)
-    return None
-
-
-def _infer_unicode_alignment(text: str) -> str | None:
-    if _contains_any(text, ("\u5c45\u4e2d", "\u5c45\u4e2d\u5bf9\u9f50")):
-        return "center"
-    if _contains_any(text, ("\u53f3\u5bf9\u9f50", "\u9760\u53f3")):
-        return "right"
-    if _contains_any(text, ("\u5de6\u5bf9\u9f50", "\u9760\u5de6")):
-        return "left"
-    return None
-
-
-def _infer_unicode_color(text: str) -> str | None:
-    hex_match = re.search(r"#?[0-9a-fA-F]{6}", text)
-    if hex_match:
-        color = hex_match.group(0)
-        return color if color.startswith("#") else f"#{color}"
-    if _contains_any(text, ("\u7ea2\u8272", "\u7ea2")):
-        return "#FF0000"
-    if _contains_any(text, ("\u84dd\u8272", "\u84dd")):
-        return "#0000FF"
-    if _contains_any(text, ("\u7eff\u8272", "\u7eff")):
-        return "#008000"
-    if _contains_any(text, ("\u9ed1\u8272", "\u9ed1")):
-        return "#000000"
-    return None
-
-
-def _infer_unicode_font_size(text: str) -> int | None:
-    match = re.search(r"(\d+)\s*(?:\u53f7|\u78c5|pt)", text, re.IGNORECASE)
-    if match:
-        return int(match.group(1))
-    return None
-
-
-def build_unicode_rule_based_plan(command: str) -> FormatPlan:
-    actions: list[FormatAction] = []
-    last_target_index = -1
-    parts = re.split(
-        r"[\uff0c\u3002\uff1b;\n]+|\u7136\u540e|\u5e76\u4e14|\u540c\u65f6|\u63a5\u7740|\u968f\u540e|\u518d",
-        command,
-    )
-    for raw_part in parts:
-        part = raw_part.strip()
-        if not part:
-            continue
-        if "首次出现" in part:
-            # The primary parser preserves the quoted target. Treating this
-            # as a blanket Unicode-format command would bold the whole file.
-            continue
-        explicit_target_index = _infer_unicode_target_paragraph_index(part)
-        target_index = explicit_target_index if explicit_target_index is not None else last_target_index
-        if explicit_target_index is not None:
-            last_target_index = explicit_target_index
-
-        bold = True if "\u52a0\u7c97" in part else None
-        font_size = _infer_unicode_font_size(part)
-        color_hex = _infer_unicode_color(part)
-        alignment = _infer_unicode_alignment(part)
-        if any(value is not None for value in (bold, font_size, color_hex, alignment)):
-            actions.append(
-                FormatAction(
-                    operation="format",
-                    target_paragraph_index=target_index,
-                    bold=bold,
-                    font_size=font_size,
-                    color_hex=color_hex,
-                    alignment=alignment,
-                )
-            )
     return FormatPlan(actions=actions)
 
 
@@ -1043,7 +963,6 @@ def handle_document_operation(input_data):
 
         rule_plan = merge_rule_plans(
             build_rule_based_plan(input_data.natural_language_cmd),
-            build_unicode_rule_based_plan(input_data.natural_language_cmd),
             _build_document_aware_plan(input_data.natural_language_cmd, doc),
         )
         table_action = _build_rule_based_table_action(input_data.natural_language_cmd, doc)

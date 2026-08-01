@@ -90,14 +90,10 @@ npm run dev
 
 ## 基础验证
 
+在仓库根目录执行统一检查入口：
+
 ```powershell
-pytest -m "not api_acceptance"
-ruff check backend scripts
-
-Set-Location frontend
-npm run lint
-npm run build
-
-Set-Location ../android-app
-./gradlew.bat :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./scripts/test.ps1
 ```
+
+该脚本执行 Python 静态检查、覆盖率回归、表格评估、Web lint、单元测试、生产构建、依赖审计、Playwright，以及 Android 测试、Lint 和 Debug 构建。Android 工具链受阻时可显式使用 `-SkipAndroid`，但必须记录未执行原因。真实模型验收另见[测试与验收](../testing/README.md)。

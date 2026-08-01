@@ -26,7 +26,7 @@ npm run test:e2e
 
 组件测试使用 Vitest 和 jsdom，覆盖组件渲染、表单交互、路由与登录状态分支。浏览器测试使用 Playwright，在桌面 Chromium 和 Pixel 7 移动视口中验证首页、指南、路由保护和登录流程；GitHub CI 会在每次推送和拉取请求中持续执行。
 
-首次执行浏览器测试前，须通过 `npx playwright install chromium` 安装测试浏览器。自动化测试不替代涉及真实模型、文件交付物与发布环境的[人工验收套件](../tests/manual/README.md)。依赖安装与安全审计会向 npm registry 提交依赖元数据，应在获准联网的受控环境中执行。
+首次执行浏览器测试前，须通过 `npx playwright install chromium` 安装测试浏览器。自动化测试不替代涉及真实模型、文件交付物与发布环境的[真实材料验收](../tests/manual/README.md)和客户端人工核验。依赖安装与安全审计会向 npm registry 提交依赖元数据，应在获准联网的受控环境中执行。
 
 ## 目录约定
 

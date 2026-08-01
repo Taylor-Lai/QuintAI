@@ -1,6 +1,8 @@
 """DocNexus AI modules with lazy public exports."""
 
 __all__ = [
+    "DocumentAction",
+    "DocumentOperationPlan",
     "FormatAction",
     "FormatPlan",
     "handle_document_operation",
@@ -10,10 +12,24 @@ __all__ = [
 
 
 def __getattr__(name: str):
-    if name in {"FormatAction", "FormatPlan", "handle_document_operation"}:
-        from .document_operations import FormatAction, FormatPlan, handle_document_operation
+    if name in {
+        "DocumentAction",
+        "DocumentOperationPlan",
+        "FormatAction",
+        "FormatPlan",
+        "handle_document_operation",
+    }:
+        from .document_operations import (
+            DocumentAction,
+            DocumentOperationPlan,
+            FormatAction,
+            FormatPlan,
+            handle_document_operation,
+        )
 
         exports = {
+            "DocumentAction": DocumentAction,
+            "DocumentOperationPlan": DocumentOperationPlan,
             "FormatAction": FormatAction,
             "FormatPlan": FormatPlan,
             "handle_document_operation": handle_document_operation,

@@ -6,12 +6,14 @@
 
 | 使用场景 | 首选文档 | 补充文档 |
 | --- | --- | --- |
-| 日常使用 Web 或 Android | [使用指南](user-guide.md) | [人工验收测试](../tests/manual/README.md) |
+| 日常使用 Web 或 Android | [使用指南](user-guide.md) | [真实材料验收](../tests/manual/README.md) |
 | 本地安装与首次运行 | [开发环境配置](development/setup.md) | [系统架构](architecture/overview.md) |
 | 部署、升级和备份 | [部署与运维](operations/deployment.md) | [安全策略](../SECURITY.md)、[发布就绪检查](release-readiness.md) |
 | 调整后端或 AI 能力 | [后端说明](../backend/README.md) | [系统架构](architecture/overview.md)、[工程规范](development/conventions.md) |
 | 调整 Web 界面 | [Web 前端说明](../frontend/README.md) | [工程规范](development/conventions.md) |
 | 构建 Android 应用 | [Android 原生端说明](../android-app/README.md) | [系统架构](architecture/overview.md) |
-| 执行版本验收 | [测试与验收记录](testing/README.md) | [人工验收测试](../tests/manual/README.md)、[发布就绪检查](release-readiness.md) |
+| 查看维护重构与技术债 | [维护记录](development/maintenance-log.md) | [工程规范](development/conventions.md) |
+| 执行版本验收 | [测试与验收](testing/README.md) | [真实材料验收](../tests/manual/README.md)、[持续测试日志](testing/test-log.md)、[发布就绪检查](release-readiness.md) |
+| 查阅历史发布验证 | [历史发布验证](releases/README.md) | [当前发布结论](release-readiness.md) |
 
 通用协作流程见[贡献指南](../CONTRIBUTING.md)，产品与工程命名规则见[工程规范](development/conventions.md)，授权条款见 [MIT 许可证](../LICENSE)。

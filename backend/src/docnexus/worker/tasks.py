@@ -9,7 +9,11 @@ from celery.exceptions import SoftTimeLimitExceeded
 from fastapi import HTTPException
 
 from docnexus.ai.contracts import DocumentOperationInput, InformationExtractionInput, TableFillingInput
-from docnexus.ai.workflows import handle_module_1_format, handle_module_2_extract, handle_module_3_fusion
+from docnexus.ai.workflows import (
+    run_document_workflow,
+    run_information_extraction_workflow,
+    run_table_filling_workflow,
+)
 from docnexus.db import (
     AutomationSchedule,
     DocumentRecord,
@@ -103,7 +107,7 @@ def _execute(task_id: str) -> None:
     if kind == "document_edit":
         report_step(task_id, "prepare", "文档和编辑指令已加载", "completed", 1, 4)
         report_step(task_id, "document_edit", "正在理解并执行文档编辑指令", "running", 1, 4)
-        edit_result = handle_module_1_format(DocumentOperationInput(file_path=str(payload["file_path"]), natural_language_cmd=str(payload["command"])))
+        edit_result = run_document_workflow(DocumentOperationInput(file_path=str(payload["file_path"]), natural_language_cmd=str(payload["command"])))
         if edit_result.status != "success":
             raise RuntimeError(edit_result.message)
         report_step(task_id, "document_edit", "文档编辑指令执行完成", "completed", 2, 4)
@@ -114,7 +118,7 @@ def _execute(task_id: str) -> None:
         fields = [str(value) for value in payload["fields"]]
         report_step(task_id, "prepare", f"文档已加载，共需提取 {len(fields)} 个字段", "completed", 1, 5)
         report_step(task_id, "extract", "正在解析文档并提取目标字段", "running", 1, 5)
-        extract_result = handle_module_2_extract(InformationExtractionInput(file_path=str(payload["file_path"]), target_entities=fields))
+        extract_result = run_information_extraction_workflow(InformationExtractionInput(file_path=str(payload["file_path"]), target_entities=fields))
         if extract_result.status != "success":
             raise RuntimeError(extract_result.message)
         report_step(task_id, "extract", "目标字段提取完成", "completed", 2, 5)
@@ -179,7 +183,7 @@ def _execute(task_id: str) -> None:
         ) -> None:
             report_step(task_id, node_code, message, status, completed_steps, total_steps)
 
-        fill_result = handle_module_3_fusion(
+        fill_result = run_table_filling_workflow(
             TableFillingInput(task_id=task_id, workspace_dir=str(payload["workspace_dir"]), user_request=payload.get("user_request") or None),
             progress_callback=progress_callback,
         )

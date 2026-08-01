@@ -18,12 +18,19 @@
 
 ## 提交前检查
 
-后端：
+完整项目门禁以统一脚本为准：
 
 ```powershell
-pytest -m "not api_acceptance"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./scripts/test.ps1
+```
+
+开发过程中可以先执行受影响子系统的快速检查。后端：
+
+```powershell
 ruff check backend scripts
 mypy
+pytest -m "not api_acceptance" --cov=docnexus --cov-fail-under=59
+python scripts/evaluate_table_engine.py
 ```
 
 Web：
@@ -31,7 +38,10 @@ Web：
 ```powershell
 Set-Location frontend
 npm run lint
+npm run test:unit
 npm run build
+npm audit
+npm run test:e2e
 ```
 
 Android：
@@ -41,7 +51,7 @@ Set-Location android-app
 ./gradlew.bat :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
 ```
 
-针对单一模块的开发过程可先执行最小相关检查；合并前必须完成受影响客户端或服务端的完整检查，并记录未执行项目及其原因。
+只有在 Android 工具链明确不可用时才可使用 `scripts/test.ps1 -SkipAndroid`，并必须在[持续测试日志](docs/testing/test-log.md)记录未执行原因。核心 AI 逻辑或发布候选还须按[测试与验收规范](docs/testing/README.md)执行真实材料验收。
 
 ## 提交与文档
 

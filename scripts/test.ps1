@@ -22,12 +22,16 @@ function Invoke-Checked {
 }
 
 Invoke-Checked conda run -n $EnvironmentName ruff check backend scripts
+Invoke-Checked conda run -n $EnvironmentName mypy
+Invoke-Checked conda run -n $EnvironmentName python -m compileall -q backend/src
 # Avoid leaving a root-level cache directory that Docker's Windows context
 # scanner may be unable to stat even though it is listed in .dockerignore.
 Invoke-Checked -FilePath conda -Arguments @(
     "run", "-n", $EnvironmentName,
-    "pytest", "backend/tests", "-m", "not api_acceptance", "-p", "no:cacheprovider"
+    "pytest", "backend/tests", "-m", "not api_acceptance", "-p", "no:cacheprovider",
+    "--cov=docnexus", "--cov-report=term-missing", "--cov-fail-under=59"
 )
+Invoke-Checked conda run -n $EnvironmentName python scripts/evaluate_table_engine.py
 
 if (-not $SkipWeb) {
     Push-Location (Join-Path $RepositoryRoot "frontend")
@@ -35,6 +39,8 @@ if (-not $SkipWeb) {
         Invoke-Checked npm.cmd run lint
         Invoke-Checked npm.cmd test
         Invoke-Checked npm.cmd run build
+        Invoke-Checked npm.cmd audit
+        Invoke-Checked npm.cmd run test:e2e
     }
     finally {
         Pop-Location

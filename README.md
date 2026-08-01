@@ -75,7 +75,7 @@ Compose 会启动 Nginx 网关、API、Worker、调度器、PostgreSQL 和 Redis
 | 部署和维护服务 | [部署与运维](docs/operations/deployment.md) | HTTPS、迁移、容器、备份、监控和发布配置 |
 | 构建 Android 客户端 | [Android 原生端说明](android-app/README.md) | 模拟器、真机、API 地址、构建与签名 |
 | 修改或扩展项目 | [文档中心](docs/README.md) | 架构、后端、Web、Android 和工程约定 |
-| 验证候选版本 | [发布就绪检查](docs/release-readiness.md) | 自动化门禁、真实模型验收和跨端人工回归 |
+| 验证候选版本 | [发布就绪检查](docs/release-readiness.md) | 当前门禁、范围化发布结论和剩余阻断项 |
 
 代码组织、命名规则与变更要求详见[仓库工程规范](docs/development/conventions.md)。
 
@@ -88,6 +88,7 @@ Compose 会启动 Nginx 网关、API、Worker、调度器、PostgreSQL 和 Redis
 - [仓库工程规范](docs/development/conventions.md)
 - [部署与运维](docs/operations/deployment.md)
 - [发布就绪检查](docs/release-readiness.md)
+- [测试与验收](docs/testing/README.md)
 - [贡献指南](CONTRIBUTING.md)
 - [安全策略](SECURITY.md)
 

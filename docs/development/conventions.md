@@ -41,7 +41,8 @@
 - 根 `README.md` 只维护产品、仓库和职责入口，不重复各端的完整命令；
 - `backend/README.md`、`frontend/README.md` 与 `android-app/README.md` 分别维护对应子系统的开发和检查方法；
 - `docs/architecture` 解释稳定的组件关系，`docs/development` 说明开发约定，`docs/operations` 说明部署运行；
-- `docs/release-readiness.md` 记录发布门槛和当次验证事实，不替代长期开发说明；
+- `docs/release-readiness.md` 只记录当前发布门槛和结论，历史快照移入 `docs/releases`；
+- `docs/testing/test-log.md` 只记录测试事实，代码维护与技术债写入 `docs/development/maintenance-log.md`；
 - `tests/manual` 只保存可复现的验收材料和期望结果，不保存真实用户数据或临时截图。
 
 ## 提交前检查
