@@ -14,12 +14,13 @@ from docnexus.ai.table_engine.candidates.builders import (
     infer_target_entity_level,
     structured_record_to_candidate,
 )
-from docnexus.ai.table_engine.core.models import Constraint, FieldSpec, VerificationCheck
+from docnexus.ai.table_engine.core.models import Constraint, EvidencePack, FieldSpec, VerificationCheck
 from docnexus.ai.table_engine.core.runtime import AgentState
 from docnexus.ai.table_engine.execution import TaskPlanExecutor, build_source_datasets, plan_for_target_table
 from docnexus.ai.table_engine.indexing.build_units import build_retrieval_units
 from docnexus.ai.table_engine.merging import merge_candidates
 from docnexus.ai.table_engine.planning import compile_task_understanding
+from docnexus.ai.table_engine.relational_records import build_template_anchored_records
 from docnexus.ai.table_engine.skills.adapters import validate_structuring_skill_output
 from docnexus.ai.table_engine.skills.executor import execute_skill
 from docnexus.ai.table_engine.skills.renderer import render_skill_prompt
@@ -27,6 +28,15 @@ from docnexus.ai.table_engine.skills.renderer import render_skill_prompt
 MAX_PARAGRAPH_COUNT = 150
 MAX_PARAGRAPH_CHARS = 40000
 MAX_TABLE_ROWS = 200
+
+
+def _relational_candidate_target_ids(candidates) -> set[str]:
+    return {
+        candidate.target_table_id
+        for candidate in candidates
+        if candidate.metadata.get("builder") == "template_anchored_relational"
+        or "relational" in candidate.metadata.get("source_strategies", [])
+    }
 
 
 def _norm_field(value: object) -> str:
@@ -646,19 +656,34 @@ class MasterAgent:
             raise ValueError("No source documents found.")
 
         template_preview = self.registry.template_analyzer.analyze(state.template_doc)
-
-        skill_result = _run_skill(
-            self.registry,
-            state,
-            agent_name="master",
-            skill_name="any2table-task-understanding",
-            mode="planning",
-            inputs={
-                "user_request_doc": state.user_request_doc.to_dict(),
-                "template_spec": template_preview.to_dict(),
-                "source_doc_summaries": _source_doc_summaries(state),
-            },
+        probe_records = build_template_anchored_records(
+            state.template_doc,
+            state.source_docs,
+            template_preview,
+            EvidencePack(f"{state.trace_id}#relational-probe"),
         )
+        resolved_target_ids = {record.target_table_id for record in probe_records}
+        expected_target_ids = {table.target_table_id for table in template_preview.target_tables}
+        if resolved_target_ids and resolved_target_ids == expected_target_ids:
+            skill_result = None
+            state.add_log(
+                "master",
+                "llm_planning_skipped",
+                {"reason": "all_target_tables_resolved_relationally", "target_count": len(resolved_target_ids)},
+            )
+        else:
+            skill_result = _run_skill(
+                self.registry,
+                state,
+                agent_name="master",
+                skill_name="any2table-task-understanding",
+                mode="planning",
+                inputs={
+                    "user_request_doc": state.user_request_doc.to_dict(),
+                    "template_spec": template_preview.to_dict(),
+                    "source_doc_summaries": _source_doc_summaries(state),
+                },
+            )
 
         state.route_plan = [
             "table_agent",
@@ -826,45 +851,18 @@ class RetrievalAgent:
         state.evidence_pack = evidence_pack
         state.retrieval_units = build_retrieval_units(state.source_docs)
 
-        skill_result = _run_skill(
-            self.registry,
-            state,
-            agent_name="retrieval_agent",
-            skill_name="any2table-candidate-selection",
-            mode="selection",
-            inputs={
-                "task_spec": state.task_spec.to_dict() if state.task_spec else {},
-                "template_spec": state.template_spec.to_dict() if state.template_spec else {},
-                "evidence_candidates": {
-                    "count": len(evidence_pack.items),
-                    "sample_ids": [item.evidence_id for item in evidence_pack.items[:10]],
-                },
-            },
-        )
-
+        # Candidate selection used to call an LLM and then deliberately ignore
+        # its selected ids.  An advisory result with no downstream consumer is
+        # not a business feature; it only adds latency, cost, and failure modes.
+        # Keep deterministic retrieval authoritative until selection is wired
+        # into the candidate merger with measurable acceptance coverage.
         llm_selection_applied = False
         llm_selected_count = 0
-        if skill_result:
-            proposed_selected_ids = skill_result.get("selected_evidence_ids", [])
-            llm_selected_count = len(proposed_selected_ids) if isinstance(proposed_selected_ids, list) else 0
-            evidence_pack.retrieval_logs.append(
-                {
-                    "backend": "llm_skill",
-                    "skill": "any2table-candidate-selection",
-                    "selection_applied": False,
-                    "proposed_selected_count": llm_selected_count,
-                    "need_more_retrieval": bool(skill_result.get("need_more_retrieval")),
-                }
-            )
-            state.add_log(
-                "retrieval_agent",
-                "llm_selection_suggested",
-                {
-                    "selection_applied": False,
-                    "proposed_selected_count": llm_selected_count,
-                    "reason": "selection_kept_advisory_until_candidate_merger_stage",
-                },
-            )
+        state.add_log(
+            "retrieval_agent",
+            "llm_selection_skipped",
+            {"reason": "selection_has_no_downstream_consumer"},
+        )
 
         state.add_message(
             "retrieval_agent",
@@ -973,6 +971,7 @@ class CoderAgent:
     def rerun_plan(self, state: AgentState) -> AgentState:
         """Re-execute only the deterministic plan over already merged candidates."""
         candidate_records = candidates_to_structured_records(state.merged_candidates)
+        relational_target_ids = _relational_candidate_target_ids(state.merged_candidates)
         records = []
         execution_results = []
         if state.template_spec and state.evidence_pack:
@@ -988,7 +987,7 @@ class CoderAgent:
                 )
                 result = TaskPlanExecutor().execute(
                     [record for record in candidate_records if record.target_table_id == target_table.target_table_id],
-                    table_plan,
+                    None if target_table.target_table_id in relational_target_ids else table_plan,
                     source_datasets=source_datasets,
                     target_fields=[field.field_name for field in target_table.schema],
                 )
@@ -1024,11 +1023,49 @@ class CoderAgent:
 
     def run(self, state: AgentState) -> AgentState:
         rule_candidates = build_rule_candidates(state.task_spec, state.template_spec, state.evidence_pack)
+        relational_records = build_template_anchored_records(
+            state.template_doc,
+            state.source_docs,
+            state.template_spec,
+            state.evidence_pack,
+        )
+        relational_target_ids = {record.target_table_id for record in relational_records}
+        if relational_target_ids:
+            # A template-anchored relational record is the already-joined business
+            # result for its target table.  Keeping raw row/paragraph candidates
+            # for the same table creates duplicate entities and lets partial source
+            # rows compete with the canonical result.
+            rule_candidates = [
+                candidate
+                for candidate in rule_candidates
+                if candidate.target_table_id not in relational_target_ids
+            ]
+        for record in relational_records:
+            target_table = next(
+                table for table in state.template_spec.target_tables
+                if table.target_table_id == record.target_table_id
+            )
+            target_fields = [field.field_name for field in target_table.schema]
+            rule_candidates.append(
+                structured_record_to_candidate(
+                    record,
+                    target_fields=target_fields,
+                    source_strategy="relational",
+                    entity_level=infer_target_entity_level(target_fields),
+                    metadata={"builder": "template_anchored_relational"},
+                )
+            )
         if not rule_candidates and self.registry.config.extractor_backend != "default":
             rule_candidates = _registered_extractor_candidates(self.registry, state)
 
         agent_candidates = []
         source_docs = [document for document in state.source_docs if document.blocks or document.tables]
+        all_target_ids = {table.target_table_id for table in state.template_spec.target_tables}
+        # Do not call the model when deterministic relational processing has
+        # completely resolved every target table.  On mixed templates, model
+        # extraction remains available only for unresolved tables.
+        if relational_target_ids == all_target_ids:
+            source_docs = []
         concurrency = min(self.registry.config.llm_concurrency, len(source_docs))
         if concurrency > 1 and self.registry.config.enable_llm_skill_execution:
             with ThreadPoolExecutor(max_workers=concurrency, thread_name_prefix="table-extract") as pool:
@@ -1037,6 +1074,12 @@ class CoderAgent:
         else:
             for source_doc in source_docs:
                 agent_candidates.extend(self._extract_source_candidates(state, source_doc))
+        if relational_target_ids:
+            agent_candidates = [
+                candidate
+                for candidate in agent_candidates
+                if candidate.target_table_id not in relational_target_ids
+            ]
 
         target_entity_level = infer_target_entity_level(list(state.task_spec.target_fields) if state.task_spec else [])
         merge_result = merge_candidates(
@@ -1076,7 +1119,7 @@ class CoderAgent:
                 )
                 execution_result = TaskPlanExecutor().execute(
                     table_records,
-                    table_plan,
+                    None if target_table.target_table_id in relational_target_ids else table_plan,
                     source_datasets=source_datasets,
                     target_fields=[field.field_name for field in target_table.schema],
                 )
@@ -1204,33 +1247,41 @@ class VerifierAgent:
         state.fill_result = fill_result
         state.verification_report = verification_report
 
-        skill_result = _run_skill(
-            self.registry,
-            state,
-            agent_name="verifier_agent",
-            skill_name="any2table-verification",
-            mode="verification",
-            inputs={
-                "task_spec": state.task_spec.to_dict() if state.task_spec else {},
-                "template_spec": state.template_spec.to_dict() if state.template_spec else {},
-                "selected_records": {
-                    "count": len(state.records),
-                    "records": [
-                        {
-                            "record_id": record.record_id,
-                            "values": record.values,
-                            "field_sources": record.field_sources,
-                            "confidence": record.confidence,
-                        }
-                        for record in state.records[:50]
-                    ],
+        if verification_report.status == "pass":
+            skill_result = None
+            state.add_log(
+                "verifier_agent",
+                "llm_verification_skipped",
+                {"reason": "deterministic_verification_passed"},
+            )
+        else:
+            skill_result = _run_skill(
+                self.registry,
+                state,
+                agent_name="verifier_agent",
+                skill_name="any2table-verification",
+                mode="verification",
+                inputs={
+                    "task_spec": state.task_spec.to_dict() if state.task_spec else {},
+                    "template_spec": state.template_spec.to_dict() if state.template_spec else {},
+                    "selected_records": {
+                        "count": len(state.records),
+                        "records": [
+                            {
+                                "record_id": record.record_id,
+                                "values": record.values,
+                                "field_sources": record.field_sources,
+                                "confidence": record.confidence,
+                            }
+                            for record in state.records[:50]
+                        ],
+                    },
+                    "fill_result": {
+                        "output_path": fill_result.output_path,
+                        "written_cell_count": len(fill_result.written_cells),
+                    },
                 },
-                "fill_result": {
-                    "output_path": fill_result.output_path,
-                    "written_cell_count": len(fill_result.written_cells),
-                },
-            },
-        )
+            )
 
         if skill_result:
             raw_status = str(skill_result.get("status") or skill_result.get("verdict") or "warning").lower()
@@ -1249,10 +1300,16 @@ class VerifierAgent:
                     message=message,
                 )
             )
-            if normalized_status in {"warning", "fail"} and verification_report.status == "pass":
-                # The LLM review is advisory. It can surface risks that deserve a
-                # warning, but an unsupported model verdict must not reject output
-                # that passed the deterministic schema, evidence, and task checks.
+            if normalized_status == "fail" and verification_report.status == "fail":
+                verification_report.status = "fail"
+            elif normalized_status == "fail":
+                # LLM review may add diagnostic context, but it cannot override
+                # a deterministic non-failing gate with claims contradicted by
+                # the final writer traces (for example generated sequence cells).
+                verification_report.checks[-1].status = "warning"
+                if verification_report.status == "pass":
+                    verification_report.status = "warning"
+            elif normalized_status == "warning" and verification_report.status == "pass":
                 verification_report.status = "warning"
             if summary:
                 verification_report.summary = f"{verification_report.summary} LLM review: {summary}"
@@ -1331,8 +1388,8 @@ class RepairAgent:
             "Repair agent accepted a revised task plan and started one bounded retry.",
             {"attempt": state.retry_count, "failed_check_count": len(failed_checks)},
         )
-        if state.merged_candidates:
-            state = self.coder_agent.rerun_plan(state)
-        else:
-            state = self.coder_agent.run(state)
+        # A failed verification commonly means the candidate set itself is
+        # incomplete. Re-running only the old merged candidates cannot recover
+        # missing source rows or fields, so repair always rebuilds extraction.
+        state = self.coder_agent.run(state)
         return self.verifier_agent.run(state)

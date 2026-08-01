@@ -826,6 +826,18 @@ def _extract_covid_country_record(target_table, task_spec: TaskSpec, evidence_pa
         return []
 
     paragraph_items = [item for item in evidence_pack.items if item.evidence_type == "paragraph" and isinstance(item.content, str)]
+    # Hybrid retrieval ranks evidence by relevance, which is not document
+    # order. Section-aware extraction must restore the original paragraph
+    # sequence before associating headings, details, dates, and observations.
+    paragraph_items.sort(
+        key=lambda item: (
+            item.source_doc_id,
+            item.location.paragraph_index
+            if item.location is not None and item.location.paragraph_index is not None
+            else 10**9,
+            item.evidence_id,
+        )
+    )
     if not paragraph_items:
         return []
 

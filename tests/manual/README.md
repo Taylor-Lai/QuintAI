@@ -2,6 +2,8 @@
 
 本目录用于业务验收、演示和回归测试，覆盖信息提取、文档编辑和表格填充三类核心能力。测试材料按 `01-入门` 至 `05-极限` 组织，共 15 个场景。
 
+全量 API 运行器为 `scripts/run_manual_acceptance.py`；执行规范、长期结论和已知材料矛盾分别记录在 `docs/testing/README.md`、`docs/testing/test-log.md` 和 `docs/testing/fixture-issues.md`。原始结果写入 `reports/test-runs/`，不提交 Git。
+
 ## 适用范围
 
 - Web 与 Android 的核心业务流程；

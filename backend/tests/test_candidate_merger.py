@@ -97,6 +97,28 @@ class CandidateMergerTests(unittest.TestCase):
         self.assertEqual(candidates[0].row_identity, {"国家/地区": "China"})
         self.assertTrue(candidates[0].metadata["row_identity_complete"])
 
+    def test_agent_candidate_normalizes_country_and_continent_aliases(self) -> None:
+        skill_result = {
+            "records": [
+                {
+                    "values": {"国家/地区": "中国", "大洲": "亚洲", "病例数": 45},
+                    "source_paragraph_ids": [],
+                    "confidence": 0.8,
+                }
+            ]
+        }
+
+        candidates = build_agent_candidates_from_skill_result(
+            task_spec=self.task_spec,
+            template_spec=self.template_spec,
+            source_doc=self.source_doc,
+            skill_result=skill_result,
+        )
+
+        self.assertEqual(candidates[0].values["国家/地区"], "China")
+        self.assertEqual(candidates[0].values["大洲"], "Asia")
+        self.assertEqual(candidates[0].row_identity, {"国家/地区": "China"})
+
     def test_merge_rejects_province_candidate_for_country_template(self) -> None:
         agent_candidate = CandidateRecord(
             candidate_id="agent-1",

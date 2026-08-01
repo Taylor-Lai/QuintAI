@@ -40,6 +40,7 @@ from docnexus.services.enterprise import (
     ensure_document_capacity,
     reserve_monthly_run,
 )
+from docnexus.services.input_parsing import parse_user_list
 from docnexus.services.quality import extraction_quality, safely_repair_fields
 from docnexus.services.upload_security import save_upload_safely
 from docnexus.services.validation import validate_fields
@@ -291,7 +292,7 @@ async def upload_documents(
     context.require("member")
     if len(files) > settings.max_upload_files:
         raise HTTPException(400, f"单次最多上传 {settings.max_upload_files} 个文件")
-    tag_list = list(dict.fromkeys(item.strip() for item in tags.replace("，", ",").split(",") if item.strip()))[:20]
+    tag_list = parse_user_list(tags, limit=20)
     created: list[DocumentRecord] = []
     batch_dir = settings.data_dir / "documents" / user.id / uuid.uuid4().hex
     try:

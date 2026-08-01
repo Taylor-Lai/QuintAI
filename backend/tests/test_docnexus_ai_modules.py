@@ -1,23 +1,97 @@
+import shutil
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+from docnexus.ai.contracts import DocumentOperationInput
 from docnexus.ai.document_operations import (
     FormatAction,
     _apply_insert_action,
     _apply_replace_action,
     _apply_structure_action,
     _build_rule_based_table_action,
+    _parse_format_plan_response,
     _unresolved_action_reports,
     build_rule_based_plan,
+    handle_document_operation,
 )
-from docnexus.ai.information_extraction import merge_chunk_extractions
+from docnexus.ai.information_extraction import merge_chunk_extractions, normalize_field_value
 from docx import Document
 
 
+def _document_test_snapshot(doc: Document) -> dict[str, object]:
+    return {
+        "paragraphs": [
+            {
+                "text": paragraph.text,
+                "style": paragraph.style.name if paragraph.style else None,
+                "alignment": int(paragraph.alignment) if paragraph.alignment is not None else None,
+                "runs": [
+                    (
+                        run.text,
+                        run.bold,
+                        run.italic,
+                        run.underline if run.underline is not None else None,
+                        run.font.size.pt if run.font.size else None,
+                        str(run.font.color.rgb) if run.font.color and run.font.color.rgb else None,
+                        run.font.name,
+                    )
+                    for run in paragraph.runs
+                ],
+            }
+            for paragraph in doc.paragraphs
+        ],
+        "tables": [[[cell.text for cell in row.cells] for row in table.rows] for table in doc.tables],
+    }
+
+
 class DocumentOperationModelTests(unittest.TestCase):
+    def test_manual_document_fixtures_match_canonical_outputs(self) -> None:
+        fixture_root = Path(__file__).resolve().parents[2] / "tests" / "manual" / "02-文档编辑"
+        with tempfile.TemporaryDirectory() as tmp:
+            for case_dir in sorted(path for path in fixture_root.iterdir() if path.is_dir()):
+                with self.subTest(case=case_dir.name):
+                    source = Path(tmp) / f"{case_dir.name}.docx"
+                    shutil.copy2(case_dir / "原始文档.docx", source)
+                    result = handle_document_operation(DocumentOperationInput(
+                        file_path=str(source),
+                        natural_language_cmd=(case_dir / "编辑要求.txt").read_text(encoding="utf-8").strip(),
+                    ))
+                    self.assertEqual(result.status, "success", f"{case_dir.name}: {result.message}")
+                    actual = Document(result.processed_file_path)
+                    expected = Document(case_dir / "期望结果.docx")
+                    self.assertEqual(
+                        _document_test_snapshot(actual),
+                        _document_test_snapshot(expected),
+                    )
+
+    def test_format_plan_parses_fenced_provider_response(self) -> None:
+        plan = _parse_format_plan_response(
+            '```json\n{"actions":[{"operation":"format","target_paragraph_index":0,"bold":true}]}\n```'
+        )
+        self.assertEqual(len(plan.actions), 1)
+        self.assertTrue(plan.actions[0].bold)
+
+    def test_extraction_normalizes_spaced_chinese_date_and_array(self) -> None:
+        self.assertEqual(normalize_field_value("入职日期", "2026 年 8 月 3 日"), "2026-08-03")
+        self.assertEqual(normalize_field_value("改进动作", ["动作一", "动作二"]), "动作一；动作二")
+
+    def test_extraction_normalizes_business_field_shapes(self) -> None:
+        self.assertEqual(normalize_field_value("采购内容", "GPU 云算力服务 12 个月"), "GPU 云算力服务")
+        self.assertEqual(
+            normalize_field_value("付款条件", "合同生效后 30%，验收后 60%，质保后 10%。"),
+            "30%/60%/10%",
+        )
+        self.assertEqual(normalize_field_value("准确率要求", "不得低于 98.5%"), "98.5%")
+        self.assertEqual(normalize_field_value("本周完成接口数", "24 个"), 24)
+        self.assertEqual(
+            normalize_field_value("最终根因", "任务消费者发布时环境变量名称拼写错误，导致新实例未订阅 production 队列"),
+            "新实例因环境变量名称拼写错误未订阅 production 队列",
+        )
+
     def test_format_action_supports_non_format_operations(self) -> None:
         action = FormatAction(
             operation="replace",
@@ -70,7 +144,7 @@ class DocumentOperationModelTests(unittest.TestCase):
             )
         )
 
-    def test_replace_action_is_idempotent_when_content_already_exists(self) -> None:
+    def test_replace_action_does_not_claim_success_for_unmatched_target(self) -> None:
         doc = Document()
         doc.add_paragraph("第 29 周产品例会纪要")
 
@@ -79,13 +153,13 @@ class DocumentOperationModelTests(unittest.TestCase):
             FormatAction(operation="replace", target_text="标题", content="第 29 周产品例会纪要"),
         )
 
-        self.assertEqual(changed, 1)
+        self.assertEqual(changed, 0)
 
         quoted_changed = _apply_replace_action(
             doc,
             FormatAction(operation="replace", target_text="标题", content="“第 29 周产品例会纪要”"),
         )
-        self.assertEqual(quoted_changed, 1)
+        self.assertEqual(quoted_changed, 0)
 
     def test_insert_action_is_idempotent_when_content_already_exists(self) -> None:
         doc = Document()

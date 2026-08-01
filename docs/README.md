@@ -12,6 +12,6 @@
 | 调整后端或 AI 能力 | [后端说明](../backend/README.md) | [系统架构](architecture/overview.md)、[工程规范](development/conventions.md) |
 | 调整 Web 界面 | [Web 前端说明](../frontend/README.md) | [工程规范](development/conventions.md) |
 | 构建 Android 应用 | [Android 原生端说明](../android-app/README.md) | [系统架构](architecture/overview.md) |
-| 执行版本验收 | [人工验收测试](../tests/manual/README.md) | [发布就绪检查](release-readiness.md) |
+| 执行版本验收 | [测试与验收记录](testing/README.md) | [人工验收测试](../tests/manual/README.md)、[发布就绪检查](release-readiness.md) |
 
 通用协作流程见[贡献指南](../CONTRIBUTING.md)，产品与工程命名规则见[工程规范](development/conventions.md)，授权条款见 [MIT 许可证](../LICENSE)。

@@ -84,6 +84,15 @@ def _clean_city_value(value: object) -> object:
 def _clean_schema_value(field_name: str, value: object) -> object:
     if _is_city_field(field_name):
         return _clean_city_value(value)
+    normalized_field = _normalize_field_name(field_name)
+    if normalized_field in {"国家/地区", "国家", "country", "nation"} and value not in (None, ""):
+        normalized_value = _normalize_field_name(str(value))
+        if normalized_value in {"中国", "中华人民共和国", "china", "prc"}:
+            return "China"
+    if normalized_field in {"大洲", "continent"} and value not in (None, ""):
+        normalized_value = _normalize_field_name(str(value))
+        if normalized_value in {"亚洲", "asia"}:
+            return "Asia"
     return value
 
 

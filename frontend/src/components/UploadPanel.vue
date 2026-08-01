@@ -1130,7 +1130,12 @@ const handleDocExtractUpload = async () => {
 
   const formData = new FormData()
   formData.append('file', extractFile.value)
-  formData.append('fields', fieldsText.value.trim())
+  const normalizedFields = fieldsText.value
+    .split(/[,，;；\r\n]+/)
+    .map(field => field.trim())
+    .filter(Boolean)
+    .filter((field, index, values) => values.indexOf(field) === index)
+  formData.append('fields', normalizedFields.join(','))
 
   loading.value = true
   clearResultState()

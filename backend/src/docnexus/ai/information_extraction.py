@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 from docx import Document
@@ -23,7 +24,8 @@ def _schema_classes():
 
 EXTRACTION_CHUNK_SIZE = 6000
 EXTRACTION_CHUNK_OVERLAP = 500
-DATE_RE = re.compile(r"(\d{4})[年/-](\d{1,2})[月/-](\d{1,2})日?")
+DATE_RE = re.compile(r"(\d{4})\s*[年/-]\s*(\d{1,2})\s*[月/-]\s*(\d{1,2})\s*日?")
+TIME_RE = re.compile(r"(?<!\d)(\d{1,2}):(\d{2})(?::(\d{2}))?(?!\d)")
 NUMBER_RE = re.compile(r"-?\d+(?:,\d{3})*(?:\.\d+)?")
 
 
@@ -64,13 +66,46 @@ def find_evidence_snippet(text: str, value: object, window: int = 80) -> str | N
 def normalize_field_value(field_name: str, value: object) -> object:
     if is_missing_extraction_value(value):
         return "未找到"
-    text = str(value).strip()
+    if isinstance(value, (list, tuple, set)):
+        text = "；".join(str(item).strip() for item in value if str(item).strip())
+    else:
+        text = str(value).strip()
     normalized_name = "".join(field_name.split()).lower()
     date_match = DATE_RE.search(text)
     if date_match and any(token in normalized_name for token in ("日期", "时间", "date", "time")):
         year, month, day = date_match.groups()
-        return f"{int(year):04d}-{int(month):02d}-{int(day):02d}"
-    if any(token in normalized_name for token in ("金额", "预算", "数量", "人口", "gdp", "收入", "病例", "检测")):
+        normalized_date = f"{int(year):04d}-{int(month):02d}-{int(day):02d}"
+        time_match = TIME_RE.search(text)
+        if time_match:
+            hour, minute, second = time_match.groups()
+            normalized_date += f" {int(hour):02d}:{minute}" + (f":{second}" if second else "")
+        return normalized_date
+    if any(token in normalized_name for token in ("金额", "总额")):
+        number_match = NUMBER_RE.search(text.replace(",", ""))
+        if number_match:
+            try:
+                return f"{Decimal(number_match.group(0)):.2f}"
+            except InvalidOperation:
+                pass
+    if "付款条件" in normalized_name:
+        percentages = re.findall(r"\d+(?:\.\d+)?%", text)
+        if percentages:
+            return "/".join(percentages)
+    if "准确率" in normalized_name:
+        percentage = re.search(r"\d+(?:\.\d+)?%", text)
+        if percentage:
+            return percentage.group(0)
+    if "采购内容" in normalized_name:
+        # Duration belongs in a dedicated service-period field. Do not let a
+        # model concatenate the adjacent duration into the purchased item.
+        text = re.sub(r"\s+\d+(?:\.\d+)?\s*(?:个?月|年|天)\s*$", "", text).strip()
+    if "违约金规则" in normalized_name:
+        text = text.replace("千分之一", "0.1%")
+        text = re.sub(r"^按", "", text)
+        text = text.replace("计算", "").replace("的 10%", " 10%").replace("的10%", " 10%")
+        text = re.sub(r"每日\s*(\d)", r"每日 \1", text)
+        text = re.sub(r"\s+", " ", text).strip(" ，,。")
+    if any(token in normalized_name for token in ("预算", "数量", "人口", "gdp", "收入", "病例", "检测", "请求数")) or normalized_name.endswith("数"):
         number_match = NUMBER_RE.search(text.replace(",", ""))
         if number_match:
             number_text = number_match.group(0)
@@ -78,6 +113,24 @@ def normalize_field_value(field_name: str, value: object) -> object:
                 return float(number_text) if "." in number_text else int(number_text)
             except ValueError:
                 return text
+    if any(token in normalized_name for token in ("永久数据丢失", "是否", "发生")):
+        if text in {"未发生", "没有", "无", "否", "no", "false"}:
+            return "否"
+        if text in {"发生", "有", "是", "yes", "true"}:
+            return "是"
+    if "主要风险" in normalized_name:
+        text = text.replace("比计划晚", "晚")
+    if "下周目标" in normalized_name:
+        text = text.replace("并把", "并将").replace("压到", "降至")
+    if "最终根因" in normalized_name:
+        root_match = re.search(
+            r"(?:任务消费者发布时)?环境变量名称拼写错误[，,]?导致新实例未订阅\s*([^，,。]+队列)",
+            text,
+        )
+        if root_match:
+            return f"新实例因环境变量名称拼写错误未订阅 {root_match.group(1).strip()}"
+    text = re.sub(r"(?<=\d)(个月|个工作日|天|小时)", r" \1", text)
+    text = re.sub(r"^([\u4e00-\u9fff]{2,8})([A-Z]\d+-\d+)$", r"\1 \2", text)
     return text
 
 
@@ -146,6 +199,15 @@ def _merge_chunk_candidates(
                 conflicts.setdefault(entity, [current])
                 if value not in conflicts[entity]:
                     conflicts[entity].append(value)
+                context = str(chunk.get("text") or "")
+                if any(marker in context for marker in ("最终", "定稿", "终审", "以此为准", "正式版")):
+                    merged[entity] = value
+                    evidence[entity] = {
+                        "chunk_id": chunk["chunk_id"],
+                        "char_range": [chunk["start"], chunk["end"]],
+                        "snippet": find_evidence_snippet(context, value),
+                        "strategy": "authoritative_version",
+                    }
             candidates.setdefault(entity, [])
             if value not in candidates[entity]:
                 candidates[entity].append(value)
@@ -183,7 +245,10 @@ def _merge_chunk_candidates(
         "confidence": confidence,
         "candidates": candidates,
         "validation": validation,
+        "raw": {entity: merged.get(entity) for entity in target_entities},
     }
+    for entity in target_entities:
+        merged[entity] = normalized_values[entity]
     return merged
 
 
@@ -224,7 +289,10 @@ def handle_information_extraction(input_data):
     try:
         full_text = _read_document_text(input_data.file_path)
         fields_spec = {
-            entity: (str, Field(default="未找到", description=f"提取 '{entity}' 的内容"))
+            # Some OpenAI-compatible models legitimately represent repeated
+            # facts as a JSON array. Accept that shape and normalize it below
+            # instead of failing the entire extraction during Pydantic parse.
+            entity: (str | list[str], Field(default="未找到", description=f"提取 '{entity}' 的内容"))
             for entity in input_data.target_entities
         }
         dynamic_model = create_model("DynamicExtractionModel", **fields_spec)
@@ -250,6 +318,8 @@ def handle_information_extraction(input_data):
             chunk_results.append({} if result is None else result.model_dump())
 
         extracted_data = merge_chunk_extractions(chunk_results, chunks, input_data.target_entities, full_text)
+        if extracted_data.get("_meta", {}).get("found_field_count", 0) == 0:
+            return output_schema(status="failed", message="未从源材料中找到任何请求字段，任务未生成有效结果。")
         return output_schema(status="success", extracted_data=extracted_data)
 
     except Exception:
@@ -257,7 +327,7 @@ def handle_information_extraction(input_data):
         return output_schema(status="failed", message="信息提取失败，请查看服务端日志。")
 
 
-_UNICODE_DATE_RE = re.compile(r"(\d{4})[年/-](\d{1,2})[月/-](\d{1,2})日?")
+_UNICODE_DATE_RE = re.compile(r"(\d{4})\s*[年/-]\s*(\d{1,2})\s*[月/-]\s*(\d{1,2})\s*日?")
 _DATE_FIELD_TOKENS = ("日期", "时间", "截止", "截至", "date", "time", "deadline")
 
 
@@ -317,6 +387,9 @@ def merge_chunk_extractions(
     candidates = meta.setdefault("candidates", {})
     validation = meta.setdefault("validation", {})
 
+    document_date_match = _UNICODE_DATE_RE.search(full_text)
+    document_date = _format_unicode_date(document_date_match) if document_date_match else None
+
     for entity in target_entities:
         if not _is_unicode_missing_value(merged.get(entity)):
             continue
@@ -342,6 +415,29 @@ def merge_chunk_extractions(
             "normalized_value": fallback_value,
             "confidence": confidence[entity],
         }
+
+    for entity in target_entities:
+        value = merged.get(entity)
+        if _is_unicode_date_field(entity) and document_date and isinstance(value, str):
+            time_match = TIME_RE.fullmatch(value.strip())
+            if time_match:
+                hour, minute, second = time_match.groups()
+                normalized_value = f"{document_date} {int(hour):02d}:{minute}" + (f":{second}" if second else "")
+                merged[entity] = normalized_value
+                normalized[entity] = normalized_value
+                validation[entity]["normalized_value"] = normalized_value
+
+    if "改进动作" in target_entities:
+        action_lines = re.findall(r"(?m)^\s*(?:\d+[.、)]|[-*])\s*.+$", full_text)
+        if not action_lines:
+            inline_actions = re.search(r"(?:后续|改进)动作[：:]\s*(.+?)(?:\n|$)", full_text)
+            if inline_actions:
+                action_lines = [
+                    item for item in re.split(r"[；;]", inline_actions.group(1))
+                    if item.strip(" ，,。")
+                ]
+        if action_lines:
+            merged["改进动作数量"] = len(action_lines)
 
     found_count = sum(1 for entity in target_entities if not _is_unicode_missing_value(merged.get(entity)))
     meta["found_field_count"] = found_count

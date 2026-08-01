@@ -146,7 +146,7 @@ def _infer_field_type(field_name: str) -> str:
     normalized = "".join(field_name.split()).lower()
     if any(token in normalized for token in ("日期", "时间", "date", "time")):
         return "date"
-    if any(token in normalized for token in ("数", "量", "人口", "gdp", "收入", "金额", "预算", "病例", "检测", "比例", "率", "合计", "总计", "平均")):
+    if any(token in normalized for token in ("数", "量", "序号", "排名", "人口", "gdp", "收入", "成本", "支出", "单价", "金额", "预算", "病例", "检测", "比例", "率", "合计", "总计", "平均")):
         return "number"
     return "string"
 
@@ -179,7 +179,7 @@ class DefaultTemplateAnalyzer:
                     field_name=header_name,
                     normalized_name="".join(header_name.split()).strip().lower(),
                     data_type=_infer_field_type(header_name),
-                    required=False,
+                    required=not any(token in header_name for token in ("备注", "说明", "原因")),
                 )
                 for col_index, header_name in enumerate(header_names)
             ]

@@ -177,6 +177,133 @@ def test_compiler_normalizes_llm_multi_sort_fields_to_keys() -> None:
     }
 
 
+def test_compiler_drops_join_for_multi_file_append_request() -> None:
+    task = TaskSpec(
+        "task",
+        "fill_table",
+        "template",
+        target_fields=["国家/地区", "日期", "病例数"],
+        constraints=[
+                Constraint(
+                    "request",
+                    "user_request",
+                    "request_text",
+                    None,
+                    "contains",
+                    value="将两个文件中日期范围内的数据填入同一个模板。",
+                )
+        ],
+    )
+    result = {
+        "operations": [
+            {
+                "operation_id": "wrong-join",
+                "op": "join",
+                "inputs": ["global.xlsx", "china.docx"],
+                "output": "joined",
+                "params": {"left_on": ["日期"], "right_on": ["日期"]},
+            },
+            {
+                "operation_id": "project",
+                "op": "project",
+                "inputs": ["joined"],
+                "depends_on": ["wrong-join"],
+                "params": {"fields": ["国家/地区", "日期", "病例数"]},
+            },
+        ]
+    }
+
+    plan = compile_task_understanding(task, result)
+
+    assert [operation.op for operation in plan.operations] == ["project"]
+    assert plan.operations[0].inputs == ["records"]
+    assert plan.operations[0].depends_on == []
+
+
+def test_compiler_routes_external_filter_inputs_to_complete_record_stream() -> None:
+    task = TaskSpec(
+        "task",
+        "fill_table",
+        "template",
+        target_fields=["国家/地区", "日期"],
+        constraints=[
+            Constraint(
+                "request", "user_request", "request_text", None, "contains",
+                value="将两个文件中的日期范围数据填入模板。",
+            )
+        ],
+    )
+    result = {
+        "operations": [
+            {
+                "operation_id": "filter",
+                "op": "filter",
+                "inputs": ["global.xlsx", "china.docx"],
+                "output": "filtered",
+                "params": {
+                    "conditions": [
+                        {
+                            "field": "日期",
+                            "operator": "between",
+                            "value": {"start": "2020-07-01", "end": "2020-08-31"},
+                        }
+                    ]
+                },
+            },
+            {
+                "operation_id": "sort",
+                "op": "sort",
+                "inputs": ["filtered"],
+                "params": {"field": "国家/地区", "order": "asc"},
+            },
+        ]
+    }
+
+    plan = compile_task_understanding(task, result)
+
+    assert plan.operations[0].inputs == ["records"]
+    assert plan.operations[1].inputs == ["filtered"]
+
+
+def test_compiler_drops_imputation_not_requested_by_user() -> None:
+    task = TaskSpec(
+        "task",
+        "fill_table",
+        "template",
+        target_fields=["国家/地区", "人口", "日期"],
+        constraints=[
+            Constraint(
+                "request", "user_request", "request_text", None, "contains",
+                value="将两个文件中的记录按日期筛选后填入模板。",
+            )
+        ],
+    )
+    result = {
+        "operations": [
+            {
+                "operation_id": "invented-impute",
+                "op": "impute",
+                "inputs": ["records"],
+                "output": "imputed",
+                "params": {"field": "人口", "value": 0},
+            },
+            {
+                "operation_id": "filter",
+                "op": "filter",
+                "inputs": ["imputed"],
+                "depends_on": ["invented-impute"],
+                "params": {"conditions": [{"field": "日期", "operator": ">=", "value": "2020-07-01"}]},
+            },
+        ]
+    }
+
+    plan = compile_task_understanding(task, result)
+
+    assert [operation.op for operation in plan.operations] == ["filter"]
+    assert plan.operations[0].inputs == ["records"]
+    assert plan.operations[0].depends_on == []
+
+
 def test_validator_rejects_duplicate_ids_unknown_dependencies_and_cycles() -> None:
     plan = TaskPlan(
         operations=[
@@ -219,6 +346,28 @@ def test_executor_does_not_run_invalid_plan() -> None:
 
     assert result.records == [record]
     assert result.skipped_operations == ["filter"]
+
+
+def test_source_alias_keeps_normalized_paragraph_and_row_candidates() -> None:
+    candidates = [
+        StructuredRecord("xlsx", "covid", {"国家/地区": "Albania", "日期": "2020-07-27"}),
+        StructuredRecord("docx", "covid", {"国家/地区": "China", "日期": "2020-07-27"}),
+    ]
+    raw_rows = [StructuredRecord("raw-xlsx", "covid", {"国家/地区": "Albania", "日期": "2020-07-27"})]
+    plan = TaskPlan(
+        operations=[
+            TaskOperation(
+                "date-filter",
+                "filter",
+                inputs=["source"],
+                params={"conditions": [{"field": "日期", "operator": ">=", "value": "2020-07-01"}]},
+            )
+        ]
+    )
+
+    result = TaskPlanExecutor().execute(candidates, plan, source_datasets={"source": raw_rows})
+
+    assert [record.values["国家/地区"] for record in result.records] == ["Albania", "China"]
 
 
 def test_executor_imputes_before_group_aggregate_and_post_filters() -> None:

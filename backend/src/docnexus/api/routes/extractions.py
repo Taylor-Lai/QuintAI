@@ -13,6 +13,7 @@ from docnexus.db import DocumentRecord, User, get_db
 from docnexus.repositories.extractions import ExtractionRepository
 from docnexus.repositories.tasks import TaskRepository
 from docnexus.services.enterprise import audit, ensure_context, ensure_document_capacity, reserve_monthly_run
+from docnexus.services.input_parsing import parse_user_list
 from docnexus.services.upload_security import save_upload_safely
 
 router = APIRouter(tags=["信息提取"])
@@ -63,7 +64,7 @@ async def submit_extraction(
 ):
     context = ensure_context(db, user)
     context.require("member")
-    field_list = list(dict.fromkeys(value.strip() for value in fields.replace("，", ",").split(",") if value.strip()))
+    field_list = parse_user_list(fields)
     if not field_list or len(field_list) > 100:
         raise HTTPException(400, "字段数量必须在 1 到 100 之间")
     task = TaskRepository.create(

@@ -626,7 +626,10 @@ class TaskPlanExecutor:
             return result
         datasets = {key: list(value) for key, value in (source_datasets or {}).items()}
         datasets["records"] = result.records
-        datasets.setdefault("source", result.records)
+        # ``source`` is the complete normalized candidate stream. Raw
+        # per-document datasets stay addressable by document id/name, but must
+        # not shadow candidates extracted from paragraphs or other sources.
+        datasets["source"] = result.records
         current = result.records
         group_fields: list[str] = []
         for operation in plan.operations:

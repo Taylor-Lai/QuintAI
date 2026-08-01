@@ -6,6 +6,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from docnexus.ai.table_engine.compute import PythonComputeEngine
 from docnexus.ai.table_engine.core.models import (
+    CellWriteTrace,
     EvidenceItem,
     EvidencePack,
     FieldSpec,
@@ -74,6 +75,45 @@ class ComputeEngineTests(unittest.TestCase):
 
 
 class VerifierTests(unittest.TestCase):
+    def test_required_formula_field_is_satisfied_by_writer_trace(self) -> None:
+        template_spec = TemplateSpec(
+            template_doc_id="template",
+            target_tables=[TargetTableSpec(
+                target_table_id="t1",
+                logical_name="region",
+                schema=[
+                    FieldSpec("region", "区域", "区域", "string", True),
+                    FieldSpec("gross", "毛利（万元）", "毛利", "number", True),
+                ],
+            )],
+        )
+        record = StructuredRecord(
+            record_id="r1",
+            target_table_id="t1",
+            values={"区域": "华东", "毛利（万元）": None},
+            field_sources={"区域": ["e1"]},
+        )
+        fill_result = FillResult(
+            "template",
+            "out.xlsx",
+            written_cells=[
+                CellWriteTrace("t1", 1, 0, "区域", "华东", "r1", ["e1"]),
+                CellWriteTrace("t1", 1, 1, "毛利（万元）", "=C2-D2", "r1", ["e2", "e3"]),
+            ],
+        )
+
+        report = DefaultVerifier().verify(
+            task_spec=TaskSpec("task", "fill_table", "template"),
+            template_spec=template_spec,
+            evidence_pack=EvidencePack("task", items=[EvidenceItem("e1", "row", "doc", {"区域": "华东"})]),
+            records=[record],
+            fill_result=fill_result,
+        )
+
+        self.assertNotIn("r1:毛利（万元）", report.missing_fields)
+        required = next(check for check in report.checks if check.name == "required_field_completeness")
+        self.assertEqual(required.status, "pass")
+
     def test_reports_missing_required_and_evidence(self) -> None:
         template_spec = TemplateSpec(
             template_doc_id="template",
@@ -106,8 +146,9 @@ class VerifierTests(unittest.TestCase):
             fill_result=FillResult("template", "out.xlsx"),
         )
 
-        self.assertEqual(report.status, "warning")
+        self.assertEqual(report.status, "fail")
         self.assertIn("r1:GDP", report.missing_fields)
+        self.assertEqual(next(check for check in report.checks if check.name == "business_output_coverage").status, "fail")
         self.assertIn("r1", report.conflict_records)
         checks = {check.name: check for check in report.checks}
         self.assertEqual(checks["required_field_completeness"].status, "warning")

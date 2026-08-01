@@ -9,6 +9,7 @@ from docnexus.ai.table_engine.core.models import (
     EvidenceItem,
     EvidencePack,
     FieldSpec,
+    LocationRef,
     TargetTableSpec,
     TaskSpec,
 )
@@ -280,6 +281,52 @@ class RowResolutionTests(unittest.TestCase):
             [("China", "2020-07-27", 68), ("China", "2020-08-01", 45)],
         )
         self.assertTrue(all(record.values["大洲"] == "Asia" for record in records))
+
+    def test_covid_docx_extraction_restores_document_order_after_rag_ranking(self) -> None:
+        target_table = TargetTableSpec(
+            target_table_id="target-table-1",
+            logical_name="covid",
+            schema=[
+                FieldSpec("f1", "国家/地区", "国家/地区", "string", True),
+                FieldSpec("f2", "大洲", "大洲", "string", False),
+                FieldSpec("f3", "人均GDP", "人均GDP", "number", False),
+                FieldSpec("f4", "人口", "人口", "number", False),
+                FieldSpec("f5", "日期", "日期", "date", True),
+                FieldSpec("f6", "每日检测数", "每日检测数", "number", False),
+                FieldSpec("f7", "病例数", "病例数", "number", False),
+            ],
+        )
+        task_spec = TaskSpec(
+            "task-1", "fill_table", "template-1",
+            target_fields=[field.field_name for field in target_table.schema],
+        )
+        contents = [
+            "2020 年 7 月 27 日中国各省新冠疫情全景纪实",
+            "Asia（亚洲）",
+            "当日全国新增确诊病例 68 例。",
+            "湖北省",
+            "常住人口约 5775 万人，人均 GDP 约 7.3 万元，当日核酸检测量约 12.6 万份。",
+            "2020 年 8 月 1 日中国新冠疫情通报",
+            "当日全国新增确诊病例 45 例。",
+        ]
+        ranked_order = [4, 0, 1, 2, 3, 5, 6]
+        evidence_pack = EvidencePack(
+            task_id="task-1",
+            items=[
+                EvidenceItem(
+                    f"p{index}", "paragraph", "china-docx", contents[index],
+                    location=LocationRef("china-docx", paragraph_index=index),
+                )
+                for index in ranked_order
+            ],
+        )
+
+        records = _extract_records_from_paragraph_evidence(target_table, task_spec, evidence_pack)
+
+        self.assertEqual([record.values["病例数"] for record in records], [68, 45])
+        self.assertTrue(all(record.values["人口"] == 57750000 for record in records))
+        self.assertTrue(all(record.values["人均GDP"] == 73000 for record in records))
+        self.assertTrue(all(record.values["每日检测数"] == 126000 for record in records))
 
 
 if __name__ == "__main__":

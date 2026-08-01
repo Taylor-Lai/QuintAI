@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from docnexus.ai.table_engine.core.models import Constraint, TaskOperation, TaskPlan, TaskSpec
 from docnexus.ai.table_engine.planning.validator import validate_task_plan
 
@@ -24,6 +26,76 @@ ALLOWED_OPERATIONS = {
     "window",
 }
 COMPARISON_OPERATORS = {">", ">=", "<", "<=", "=", "==", "eq", "gt", "gte", "lt", "lte"}
+
+
+def _request_text(task_spec: TaskSpec) -> str:
+    return "\n".join(
+        str(constraint.value)
+        for constraint in task_spec.constraints
+        if constraint.kind == "request_text" and constraint.value not in (None, "")
+    )
+
+
+def _join_explicitly_requested(request_text: str) -> bool:
+    if not request_text:
+        return True
+    return bool(
+        re.search(r"(?:关联|联接|连接|\bjoin\b)", request_text, re.IGNORECASE)
+        or re.search(r"按.{1,24}(?:字段|列|键|编号|id).{0,12}(?:匹配|合并)", request_text, re.IGNORECASE)
+    )
+
+
+def _remove_spurious_joins(operations: list[TaskOperation], task_spec: TaskSpec) -> list[TaskOperation]:
+    """Reject LLM joins when the user asked to append multi-source records.
+
+    A join changes row cardinality and can silently discard non-tabular sources.
+    It therefore requires explicit relational intent; merely saying that several
+    files should be filled into one template means union/append semantics.
+    """
+    request_text = _request_text(task_spec)
+    if _join_explicitly_requested(request_text):
+        return operations
+    removed = [operation for operation in operations if operation.op == "join"]
+    if not removed:
+        return operations
+    removed_ids = {operation.operation_id for operation in removed}
+    removed_outputs = {operation.output for operation in removed if operation.output}
+    kept = [operation for operation in operations if operation.op != "join"]
+    for operation in kept:
+        operation.depends_on = [value for value in operation.depends_on if value not in removed_ids]
+        operation.inputs = ["records" if value in removed_outputs else value for value in operation.inputs]
+    return kept
+
+
+def _normalize_append_inputs(operations: list[TaskOperation], task_spec: TaskSpec) -> None:
+    """Route unary operations over all normalized records for append tasks."""
+    request_text = _request_text(task_spec)
+    if not request_text or _join_explicitly_requested(request_text):
+        return
+    available_outputs = {"records", "source"}
+    for operation in operations:
+        if operation.inputs and any(value not in available_outputs for value in operation.inputs):
+            # External document ids/names are raw datasets. Selecting the first
+            # one for a filter/sort/project silently drops all other sources.
+            operation.inputs = ["records"]
+        if operation.output:
+            available_outputs.add(operation.output)
+
+
+def _remove_unrequested_imputation(operations: list[TaskOperation], task_spec: TaskSpec) -> list[TaskOperation]:
+    request_text = _request_text(task_spec)
+    if not request_text or re.search(r"(?:补全|填补|缺失值|空值|插值|默认值|\bimput)", request_text, re.IGNORECASE):
+        return operations
+    removed = [operation for operation in operations if operation.op == "impute"]
+    if not removed:
+        return operations
+    removed_ids = {operation.operation_id for operation in removed}
+    removed_outputs = {operation.output for operation in removed if operation.output}
+    kept = [operation for operation in operations if operation.op != "impute"]
+    for operation in kept:
+        operation.depends_on = [value for value in operation.depends_on if value not in removed_ids]
+        operation.inputs = ["records" if value in removed_outputs else value for value in operation.inputs]
+    return kept
 
 
 def _normalize(value: object) -> str:
@@ -241,6 +313,9 @@ def compile_task_understanding(task_spec: TaskSpec, result: dict[str, object] | 
             seen.add(key)
 
     _apply_deterministic_constraint_hints(operations, task_spec.constraints)
+    operations = _remove_spurious_joins(operations, task_spec)
+    operations = _remove_unrequested_imputation(operations, task_spec)
+    _normalize_append_inputs(operations, task_spec)
 
     unresolved = result.get("unresolved") or []
     plan = TaskPlan(

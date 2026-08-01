@@ -43,12 +43,21 @@ def _is_empty(value: object) -> bool:
     return value is None or value == "" or value == "未找到"
 
 
-def _missing_required_fields(records: list[StructuredRecord], template_spec: TemplateSpec) -> list[str]:
+def _missing_required_fields(
+    records: list[StructuredRecord],
+    template_spec: TemplateSpec,
+    fill_result: FillResult | None = None,
+) -> list[str]:
     required = _required_fields_by_table(template_spec)
+    written = {
+        (cell.record_id, cell.field_name)
+        for cell in (fill_result.written_cells if fill_result else [])
+        if not _is_empty(cell.value)
+    }
     missing: list[str] = []
     for record in records:
         for field_name in required.get(record.target_table_id, []):
-            if _is_empty(record.values.get(field_name)):
+            if _is_empty(record.values.get(field_name)) and (record.record_id, field_name) not in written:
                 missing.append(f"{record.record_id}:{field_name}")
     return missing
 
@@ -102,6 +111,34 @@ def _field_type_mismatches(records: list[StructuredRecord], template_spec: Templ
 
 def _written_field_count(fill_result: FillResult) -> int:
     return sum(1 for cell in fill_result.written_cells if not _is_empty(cell.value))
+
+
+def _output_coverage(
+    records: list[StructuredRecord], template_spec: TemplateSpec, fill_result: FillResult
+) -> tuple[list[str], float]:
+    """Return fields that are empty for an entire target table and cell coverage."""
+
+    wholly_empty: list[str] = []
+    expected = 0
+    filled = 0
+    for target_table in template_spec.target_tables:
+        table_records = [record for record in records if record.target_table_id == target_table.target_table_id]
+        for field in target_table.schema:
+            if any(token in field.field_name for token in ("备注", "说明", "原因")):
+                continue
+            values = [record.values.get(field.field_name) for record in table_records]
+            written_values = [
+                cell.value for cell in fill_result.written_cells
+                if cell.target_table_id == target_table.target_table_id and cell.field_name == field.field_name
+            ]
+            expected += len(values)
+            filled += max(
+                sum(1 for value in values if not _is_empty(value)),
+                sum(1 for value in written_values if not _is_empty(value)),
+            )
+            if table_records and not any(not _is_empty(value) for value in [*values, *written_values]):
+                wholly_empty.append(f"{target_table.target_table_id}:{field.field_name}")
+    return wholly_empty, (filled / expected if expected else 0.0)
 
 
 def _record_value(record: StructuredRecord, field_name: str) -> object:
@@ -234,7 +271,7 @@ class DefaultVerifier:
         records: list[StructuredRecord],
         fill_result: FillResult,
     ) -> VerificationReport:
-        missing_required = _missing_required_fields(records, template_spec)
+        missing_required = _missing_required_fields(records, template_spec, fill_result)
         missing_evidence = _missing_evidence_fields(records, template_spec)
         low_confidence = _low_confidence_records(records)
         auto_corrected = _auto_corrected_records(records)
@@ -245,6 +282,8 @@ class DefaultVerifier:
         tables_with_records = {record.target_table_id for record in records}
         empty_tables = sorted(expected_tables - tables_with_records)
         written_non_empty = _written_field_count(fill_result)
+        wholly_empty_fields, output_coverage = _output_coverage(records, template_spec, fill_result)
+        strict_incomplete = bool(wholly_empty_fields) or (bool(records) and output_coverage < 0.5)
 
         checks = [
             VerificationCheck(
@@ -266,6 +305,15 @@ class DefaultVerifier:
                     else f"{len(missing_required)} required field value(s) are missing."
                 ),
                 related_ids=missing_required[:20],
+            ),
+            VerificationCheck(
+                name="business_output_coverage",
+                status="fail" if strict_incomplete else ("warning" if output_coverage < 0.9 else "pass"),
+                message=(
+                    f"Business-field coverage is {output_coverage:.1%}; "
+                    f"{len(wholly_empty_fields)} field(s) are empty for an entire target table."
+                ),
+                related_ids=wholly_empty_fields[:20],
             ),
             VerificationCheck(
                 name="evidence_traceability",
@@ -329,7 +377,7 @@ class DefaultVerifier:
             ),
             VerificationCheck(
                 name="table_coverage",
-                status="pass" if not empty_tables else "warning",
+                status="pass" if not empty_tables else ("warning" if task_spec.allow_empty_output else "fail"),
                 message=(
                     "Every target table has at least one record."
                     if not empty_tables
@@ -339,7 +387,7 @@ class DefaultVerifier:
             ),
             VerificationCheck(
                 name="writer_output",
-                status="pass" if fill_result.output_path and fill_result.written_cells else "warning",
+                status="pass" if fill_result.output_path and written_non_empty else "fail",
                 message=(
                     f"Output document was generated with {len(fill_result.written_cells)} written cell trace(s), "
                     f"{written_non_empty} non-empty."
