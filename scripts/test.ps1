@@ -21,7 +21,7 @@ function Invoke-Checked {
     }
 }
 
-Invoke-Checked conda run -n $EnvironmentName ruff check backend/src backend/tests
+Invoke-Checked conda run -n $EnvironmentName ruff check backend scripts
 # Avoid leaving a root-level cache directory that Docker's Windows context
 # scanner may be unable to stat even though it is listed in .dockerignore.
 Invoke-Checked -FilePath conda -Arguments @(

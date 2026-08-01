@@ -18,7 +18,6 @@ import httpx
 from docx import Document
 from openpyxl import load_workbook
 
-
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / "tests" / "manual"
 RUN_ID = datetime.now().strftime("%Y%m%d-%H%M%S")
