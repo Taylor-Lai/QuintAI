@@ -26,6 +26,7 @@ docker compose ps
 - `postgres`：保存用户、任务、文档元数据与企业数据；
 - `redis`：任务队列与结果后端；
 - 生产 API 同时使用 Redis 保存跨实例限流计数；Redis 异常时登录、注册与 AI 上传端点将返回 `503`，不得通过关闭限流绕过故障；
+- 容器访问外部模型必须经过代理时，使用 `CONTAINER_HTTP_PROXY` / `CONTAINER_HTTPS_PROXY` 配置容器可达地址，并在 `CONTAINER_NO_PROXY` 中保留 PostgreSQL、Redis、API 与网关服务名；宿主机回环地址不能直接作为容器代理地址；
 - `prometheus`：可选监控服务，通过 `monitoring` profile 启动。
 
 ## 健康检查

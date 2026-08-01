@@ -22,6 +22,13 @@ _QUARTER_SALES_RE = re.compile(
     r"一季度\s*(?P<q1>-?\d+(?:\.\d+)?)\s*万元?\s*[，,]\s*"
     r"二季度\s*(?P<q2>-?\d+(?:\.\d+)?)\s*万元?"
 )
+_SIGNUP_RECORD_RE = re.compile(
+    r"(?:报名信息\s*[：:]\s*)?"
+    r"(?P<name>[\u4e00-\u9fff·]{2,20})\s*[，,]\s*"
+    r"(?P<gender>男|女)\s*[，,]\s*"
+    r"(?P<department>[^，,；;。]+?)\s*[，,]\s*"
+    r"(?:手机(?:号)?|手机号|电话)\s*[：:]?\s*(?P<phone>1\d{10})"
+)
 
 
 def _norm(value: object) -> str:
@@ -214,6 +221,57 @@ def _paragraph_sales(source_docs, target_table) -> list[StructuredRecord]:
                     field_sources=sources,
                     confidence=0.98,
                     notes=["Deterministic quarter-sales extraction."],
+                ))
+    return records
+
+
+def _paragraph_signup_records(source_docs, target_table) -> list[StructuredRecord]:
+    """Extract repeated signup rows from common Chinese inline prose."""
+
+    target_fields = [field.field_name for field in target_table.schema]
+
+    def find_field(*tokens: str) -> str | None:
+        return next(
+            (field_name for field_name in target_fields if any(token in field_name for token in tokens)),
+            None,
+        )
+
+    sequence_field = find_field("序号")
+    name_field = find_field("姓名", "名字")
+    gender_field = find_field("性别")
+    department_field = find_field("部门")
+    phone_field = find_field("手机号", "手机", "电话")
+    if not all((sequence_field, name_field, gender_field, department_field, phone_field)):
+        return []
+    assert sequence_field is not None
+    assert name_field is not None
+    assert gender_field is not None
+    assert department_field is not None
+    assert phone_field is not None
+
+    records: list[StructuredRecord] = []
+    for source_doc in source_docs:
+        for block in source_doc.blocks:
+            for match in _SIGNUP_RECORD_RE.finditer(block.text or ""):
+                values = {field_name: None for field_name in target_fields}
+                values.update({
+                    sequence_field: len(records) + 1,
+                    name_field: match.group("name"),
+                    gender_field: match.group("gender"),
+                    department_field: match.group("department").strip(),
+                    phone_field: match.group("phone"),
+                })
+                records.append(StructuredRecord(
+                    record_id=f"{target_table.target_table_id}#signup-{len(records)}",
+                    target_table_id=target_table.target_table_id,
+                    values=values,
+                    field_sources={
+                        field_name: [block.block_id]
+                        for field_name, value in values.items()
+                        if value not in (None, "")
+                    },
+                    confidence=0.99,
+                    notes=["Deterministic inline signup extraction."],
                 ))
     return records
 
@@ -444,6 +502,18 @@ def build_template_anchored_records(template_doc, source_docs, template_spec, ev
                     acc.notes.append(f"Merged canonical row from {source_doc.file.name}/{source_table.name}.")
 
         _apply_text_overrides(accumulators, target_fields, identities, source_docs)
+
+        for signup_record in _paragraph_signup_records(source_docs, target_table):
+            identity = _key(signup_record.values, identities)
+            if identity is None:
+                continue
+            acc = accumulators.setdefault(identity, _Accumulator(values={field_name: None for field_name in target_fields}))
+            for field_name, value in signup_record.values.items():
+                if value not in (None, ""):
+                    acc.values[field_name] = value
+                    acc.field_sources[field_name] = list(signup_record.field_sources.get(field_name, []))
+            acc.priority = max(acc.priority, 40)
+            acc.notes.extend(signup_record.notes)
 
         for sales_record in _paragraph_sales(source_docs, target_table):
             identity = _key(sales_record.values, identities)

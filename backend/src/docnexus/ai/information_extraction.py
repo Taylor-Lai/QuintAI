@@ -29,6 +29,47 @@ TIME_RE = re.compile(r"(?<!\d)(\d{1,2}):(\d{2})(?::(\d{2}))?(?!\d)")
 NUMBER_RE = re.compile(r"-?\d+(?:,\d{3})*(?:\.\d+)?")
 
 
+def _extract_incident_fields(full_text: str, target_entities: list[str]) -> dict[str, object]:
+    """Extract an explicitly labelled incident timeline without model variance."""
+
+    if "事件" not in full_text or not any(token in full_text for token in ("最终根因", "复盘负责人")):
+        return {}
+
+    patterns = {
+        "事件编号": r"事件(?:编号|代号)\s*[：:]?\s*([A-Z]+-\d{4}-\d+)",
+        "首次告警时间": r"(\d{4}[年/-]\d{1,2}[月/-]\d{1,2}日?\s+\d{1,2}:\d{2}(?::\d{2})?)\s*首次触发",
+        "确认时间": r"(?<!\d)(\d{1,2}:\d{2})(?:\s*[^，,。；;]{0,12})?确认",
+        "流量切换时间": r"(?<!\d)(\d{1,2}:\d{2})\s*完成流量切换",
+        "核心恢复时间": r"(?<!\d)(\d{1,2}:\d{2})\s*核心接口恢复",
+        "补偿完成时间": r"(?<!\d)(\d{1,2}:\d{2})\s*数据补偿完成",
+        "影响比例": r"影响(?:范围|比例)?\s*(?:约)?\s*(\d+(?:\.\d+)?%)",
+        "失败请求数": r"失败请求\s*([\d,]+)\s*次",
+        "永久数据丢失": r"(未发生|没有|无)(?:数据)?永久丢失",
+        "最终根因": r"最终根因.*?为(.+?)(?=。直接修复人|；直接修复人|\n|$)",
+        "修复人": r"直接修复人为\s*([^，,。；;\s]+)",
+        "复盘负责人": r"复盘负责人(?:为|是|[：:])\s*([^，,。；;\s]+)",
+    }
+    extracted: dict[str, object] = {}
+    for field_name, pattern in patterns.items():
+        if field_name not in target_entities:
+            continue
+        match = re.search(pattern, full_text)
+        if match:
+            extracted[field_name] = match.group(1).strip()
+
+    if "改进动作数量" in target_entities:
+        action_section = re.search(r"(?:后续|改进)动作[：:]\s*(.+?)(?:\n|$)", full_text)
+        if action_section:
+            actions = [
+                item.strip(" ，,。")
+                for item in re.split(r"[；;]", action_section.group(1))
+                if item.strip(" ，,。")
+            ]
+            if actions:
+                extracted["改进动作数量"] = len(actions)
+    return extracted
+
+
 def chunk_text(text: str, chunk_size: int = EXTRACTION_CHUNK_SIZE, overlap: int = EXTRACTION_CHUNK_OVERLAP) -> list[dict[str, object]]:
     if not text:
         return [{"chunk_id": 0, "start": 0, "end": 0, "text": ""}]
@@ -297,25 +338,32 @@ def handle_information_extraction(input_data):
         }
         dynamic_model = create_model("DynamicExtractionModel", **fields_spec)
         chunks = chunk_text(full_text)
+        deterministic_fields = _extract_incident_fields(full_text, input_data.target_entities)
 
-        structured_llm = get_chat_llm().with_structured_output(dynamic_model)
-        prompt = ChatPromptTemplate.from_messages([
-            (
-                "system",
-                "你是一个精准的信息提取 AI。请只基于当前文本片段提取指定字段，以 JSON 格式输出。"
-                "如果当前片段没有找到某个字段，请填'未找到'。不要编造，不要跨片段推测。\n\n"
-                "当前片段：\n{text}",
-            ),
-            ("human", "请提取以下字段：{entities}"),
-        ])
+        if all(entity in deterministic_fields for entity in input_data.target_entities):
+            chunk_results = [deterministic_fields]
+            chunks = [{"chunk_id": 0, "start": 0, "end": len(full_text), "text": full_text}]
+        else:
+            structured_llm = get_chat_llm().with_structured_output(dynamic_model)
+            prompt = ChatPromptTemplate.from_messages([
+                (
+                    "system",
+                    "你是一个精准的信息提取 AI。请只基于当前文本片段提取指定字段，以 JSON 格式输出。"
+                    "如果当前片段没有找到某个字段，请填'未找到'。不要编造，不要跨片段推测。\n\n"
+                    "当前片段：\n{text}",
+                ),
+                ("human", "请提取以下字段：{entities}"),
+            ])
 
-        chunk_results: list[dict[str, object]] = []
-        for chunk in chunks:
-            result = (prompt | structured_llm).invoke({
-                "text": chunk["text"],
-                "entities": ", ".join(input_data.target_entities),
-            })
-            chunk_results.append({} if result is None else result.model_dump())
+            chunk_results = []
+            for chunk in chunks:
+                result = (prompt | structured_llm).invoke({
+                    "text": chunk["text"],
+                    "entities": ", ".join(input_data.target_entities),
+                })
+                chunk_results.append({} if result is None else result.model_dump())
+            if deterministic_fields:
+                chunk_results[0].update(deterministic_fields)
 
         extracted_data = merge_chunk_extractions(chunk_results, chunks, input_data.target_entities, full_text)
         if extracted_data.get("_meta", {}).get("found_field_count", 0) == 0:
@@ -427,7 +475,7 @@ def merge_chunk_extractions(
                 normalized[entity] = normalized_value
                 validation[entity]["normalized_value"] = normalized_value
 
-    if "改进动作" in target_entities:
+    if "改进动作" in target_entities or "改进动作数量" in target_entities:
         action_lines = re.findall(r"(?m)^\s*(?:\d+[.、)]|[-*])\s*.+$", full_text)
         if not action_lines:
             inline_actions = re.search(r"(?:后续|改进)动作[：:]\s*(.+?)(?:\n|$)", full_text)

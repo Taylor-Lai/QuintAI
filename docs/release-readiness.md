@@ -4,16 +4,16 @@
 
 ## 当前结论
 
-评估日期：2026-08-01
+评估日期：2026-08-02
 
 | 发布范围 | 状态 | 说明 |
 | --- | --- | --- |
-| Web 与后端核心业务 | 通过 | 15 套真实材料经 Web 网关提交并严格比较为 15/15；当前确定性回归、浏览器测试和生产构建通过 |
+| Web 与后端核心业务 | 受阻 | 最近完整基线为 15/15；本轮表格 5/5，信息提取 1/5，其余 4 项被 Docker 外部 TLS 阻断 |
 | Android 调试构建 | 受阻 | 本轮环境缺少 Java / `JAVA_HOME`，未重新执行 Android 测试、Lint 和构建 |
 | Android 应用商店发布 | 不通过 | 尚未用组织发布密钥完成候选 AAB/APK 与实体设备全量业务回归 |
 | 生产部署 | 不通过 | 正式域名、HTTPS、CORS、备份恢复、模型配额和告警仍须在目标环境确认 |
 
-因此，当前可以交付 Web/后端核心业务候选版本，但不能宣称整个产品已经满足 Android 商店发布或生产部署条件。
+因此，当前代码回归及用户反馈对应的 Web 用例已通过，但恢复 Docker 到模型供应商的 TLS 链路并重跑信息提取前，不能宣称 Web/后端候选版本完成本轮全量验收；整个产品也尚未满足 Android 商店发布或生产部署条件。
 
 ## 统一发布门槛
 
@@ -30,12 +30,12 @@
 
 | 门禁 | 最近结果 | 证据 |
 | --- | --- | --- |
-| Python 标准回归 | 189 passed、8 deselected，覆盖率 66.01% | [持续测试日志](testing/test-log.md) |
+| Python 标准回归 | 195 passed、8 deselected，覆盖率 71.08% | [持续测试日志](testing/test-log.md) |
 | 表格引擎确定性评估 | 3/3 | [持续测试日志](testing/test-log.md) |
 | Web 静态检查与构建 | lint 无错误；生产构建通过 | [持续测试日志](testing/test-log.md) |
 | Web 单元与浏览器测试 | 9/9 单元测试；4/4 Playwright | [持续测试日志](testing/test-log.md) |
 | Web 依赖审计 | 0 vulnerabilities | [持续测试日志](testing/test-log.md) |
-| 15 套真实材料 | 信息提取 5/5、文档编辑 5/5、表格填充 5/5 | [最终验收摘要](testing/final-acceptance-summary.md) |
+| 15 套真实材料 | 最近完整基线 15/15；本轮表格 5/5、信息提取 1/5（4 项环境受阻） | [持续测试日志](testing/test-log.md) |
 | Android | 本轮未执行 | [持续测试日志](testing/test-log.md) |
 
 ## 发布前仍需完成

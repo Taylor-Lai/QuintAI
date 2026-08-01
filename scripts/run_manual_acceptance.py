@@ -13,6 +13,7 @@ import time
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 from docx import Document
@@ -406,7 +407,9 @@ def main() -> None:
         "scenarios": [],
     }
     persist(report)
-    with httpx.Client(base_url=BASE_URL, timeout=30) as client:
+    base_host = (urlparse(BASE_URL).hostname or "").lower()
+    trust_environment_proxy = base_host not in {"localhost", "127.0.0.1", "::1"}
+    with httpx.Client(base_url=BASE_URL, timeout=30, trust_env=trust_environment_proxy) as client:
         login(client)
         if args.category in {"all", "extraction"}:
             extraction_cases(client, report)

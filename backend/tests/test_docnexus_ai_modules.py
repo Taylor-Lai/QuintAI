@@ -1,12 +1,14 @@
+import json
 import shutil
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from docnexus.ai.contracts import DocumentOperationInput
+from docnexus.ai.contracts import DocumentOperationInput, InformationExtractionInput
 from docnexus.ai.document_operations import (
     DocumentAction,
     DocumentOperationPlan,
@@ -20,7 +22,12 @@ from docnexus.ai.document_operations import (
     build_rule_based_plan,
     handle_document_operation,
 )
-from docnexus.ai.information_extraction import merge_chunk_extractions, normalize_field_value
+from docnexus.ai.information_extraction import (
+    _extract_incident_fields,
+    handle_information_extraction,
+    merge_chunk_extractions,
+    normalize_field_value,
+)
 from docx import Document
 
 
@@ -280,6 +287,37 @@ class DocumentOperationModelTests(unittest.TestCase):
 
 
 class InformationExtractionMetadataTests(unittest.TestCase):
+    def test_incident_fixture_handler_does_not_require_model_call(self) -> None:
+        case_dir = Path(__file__).resolve().parents[2] / "tests" / "manual" / "01-信息提取" / "05-极限-故障复盘"
+        fields = (case_dir / "提取字段.txt").read_text(encoding="utf-8").strip().split(",")
+        with patch(
+            "docnexus.ai.information_extraction.get_chat_llm",
+            side_effect=AssertionError("explicit incident fields must not call the model"),
+        ):
+            result = handle_information_extraction(InformationExtractionInput(
+                file_path=str(case_dir / "源材料.txt"),
+                target_entities=fields,
+            ))
+
+        self.assertEqual(result.status, "success")
+        self.assertEqual(result.extracted_data["改进动作数量"], 2)
+
+    def test_incident_fixture_is_fully_extracted_without_model_variance(self) -> None:
+        case_dir = Path(__file__).resolve().parents[2] / "tests" / "manual" / "01-信息提取" / "05-极限-故障复盘"
+        text = (case_dir / "源材料.txt").read_text(encoding="utf-8")
+        fields = (case_dir / "提取字段.txt").read_text(encoding="utf-8").strip().split(",")
+        expected = json.loads((case_dir / "期望结果.json").read_text(encoding="utf-8"))
+        rule_result = _extract_incident_fields(text, fields)
+
+        self.assertEqual(set(rule_result), set(fields))
+        actual = merge_chunk_extractions(
+            [rule_result],
+            [{"chunk_id": 0, "start": 0, "end": len(text), "text": text}],
+            fields,
+            text,
+        )
+        self.assertEqual({field: actual[field] for field in fields}, expected)
+
     def test_merge_outputs_normalized_values_and_confidence(self) -> None:
         chunks = [{"chunk_id": 0, "start": 0, "end": 30, "text": "项目日期为2026年5月26日，预算100万元。"}]
         result = merge_chunk_extractions(

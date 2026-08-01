@@ -12,6 +12,9 @@ x-app-base: &app-base
     DATA_DIR: /app/data
     DATABASE_URL: postgresql+psycopg://huiwenrongtong:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@postgres:5432/huiwenrongtong
     REDIS_URL: redis://redis:6379/0
+    HTTP_PROXY: ${CONTAINER_HTTP_PROXY:-}
+    HTTPS_PROXY: ${CONTAINER_HTTPS_PROXY:-}
+    NO_PROXY: ${CONTAINER_NO_PROXY:-postgres,redis,app,gateway,localhost,127.0.0.1}
   volumes:
     - task-data:/app/data
   restart: unless-stopped

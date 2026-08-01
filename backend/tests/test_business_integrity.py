@@ -13,6 +13,9 @@ from docnexus.ai.document_operations import (
     merge_rule_plans,
 )
 from docnexus.ai.table_engine.analyzers import DefaultTemplateAnalyzer
+from docnexus.ai.table_engine.app import build_orchestrator
+from docnexus.ai.table_engine.cli import discover_assets
+from docnexus.ai.table_engine.config import AppConfig
 from docnexus.ai.table_engine.core.models import EvidencePack, FileAsset
 from docnexus.ai.table_engine.parsers import TextParser, XlsxParser
 from docnexus.ai.table_engine.relational_records import build_template_anchored_records
@@ -24,6 +27,7 @@ from openpyxl import load_workbook
 ROOT = Path(__file__).resolve().parents[2]
 MANUAL_TABLES = ROOT / "tests" / "manual" / "03-表格填充"
 MANUAL_DOCUMENTS = ROOT / "tests" / "manual" / "02-文档编辑"
+MANUAL_EXTRACTIONS = ROOT / "tests" / "manual" / "01-信息提取"
 
 
 def _workbook_snapshot(path: Path) -> dict[str, object]:
@@ -106,6 +110,14 @@ def test_user_lists_accept_newlines_and_multiple_delimiters() -> None:
     assert parse_user_list("姓名\n入职日期；部门,姓名") == ["姓名", "入职日期", "部门"]
 
 
+def test_manual_extraction_field_files_use_comma_protocol() -> None:
+    for field_file in sorted(MANUAL_EXTRACTIONS.glob("*/提取字段.txt")):
+        content = field_file.read_text(encoding="utf-8").strip()
+        assert "\n" not in content, field_file
+        assert "," in content, field_file
+        assert parse_user_list(content) == [field.strip() for field in content.split(",")]
+
+
 def test_manual_sales_source_builds_values_and_formulas_without_llm() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         template_doc, template_spec, records = _build_records("02-进阶-销售汇总", Path(tmp))
@@ -166,6 +178,7 @@ def test_manual_dashboard_deduplicates_vouchers_and_traces_exceptions() -> None:
 @pytest.mark.parametrize(
     "case_name",
     [
+        "01-入门-报名名单",
         "02-进阶-销售汇总",
         "03-困难-项目台账",
         "04-挑战-供应商评分",
@@ -181,6 +194,29 @@ def test_manual_table_fixtures_match_expected_without_llm(case_name: str) -> Non
         mismatches = _compare_workbook(
             Path(result.output_path),
             MANUAL_TABLES / case_name / "期望结果.xlsx",
+        )
+        assert not mismatches, json.dumps(mismatches, ensure_ascii=False, indent=2, default=str)
+
+
+@pytest.mark.parametrize("case_name", ["01-入门-报名名单", "03-困难-项目台账"])
+def test_reported_table_failures_match_expected_through_full_pipeline(case_name: str) -> None:
+    """Exercise the same agent/writer path used by Web tasks without model variance."""
+
+    case_dir = MANUAL_TABLES / case_name
+    with tempfile.TemporaryDirectory() as tmp:
+        work = Path(tmp)
+        for source_path in case_dir.iterdir():
+            if source_path.is_file() and source_path.name != "期望结果.xlsx":
+                shutil.copy2(source_path, work / source_path.name)
+        orchestrator = build_orchestrator(AppConfig(
+            enable_agent_runtime=True,
+            agent_runtime_backend="local",
+            enable_llm_skill_execution=False,
+        ))
+        result = orchestrator.run(discover_assets(work))
+        mismatches = _compare_workbook(
+            Path(result.fill_result.output_path),
+            case_dir / "期望结果.xlsx",
         )
         assert not mismatches, json.dumps(mismatches, ensure_ascii=False, indent=2, default=str)
 
