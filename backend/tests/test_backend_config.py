@@ -9,7 +9,12 @@ from docnexus.core.settings import Settings
 from fastapi import HTTPException
 
 
-def _settings(*, app_env: str = "development", secret_key: str | None = None) -> Settings:
+def _settings(
+    *,
+    app_env: str = "development",
+    secret_key: str | None = None,
+    session_cookie_secure: bool | None = None,
+) -> Settings:
     return Settings(
         app_env=app_env,
         secret_key=secret_key,
@@ -19,6 +24,7 @@ def _settings(*, app_env: str = "development", secret_key: str | None = None) ->
         bootstrap_admin_password=None,
         cors_origins=("http://localhost:5173",),
         database_url="sqlite:///./doc_system.db",
+        session_cookie_secure=session_cookie_secure,
     )
 
 
@@ -34,6 +40,13 @@ class SettingsSecurityTests(unittest.TestCase):
     def test_long_production_secret_is_accepted(self) -> None:
         secret = "x" * 32
         self.assertEqual(_settings(app_env="production", secret_key=secret).require_secret_key(), secret)
+
+    def test_session_cookie_is_secure_by_default_in_production(self) -> None:
+        self.assertTrue(_settings(app_env="production").secure_session_cookie)
+
+    def test_session_cookie_can_be_disabled_for_http_ip_deployment(self) -> None:
+        settings = _settings(app_env="production", session_cookie_secure=False)
+        self.assertFalse(settings.secure_session_cookie)
 
 
 class AdminDependencyTests(unittest.TestCase):

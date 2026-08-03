@@ -94,7 +94,7 @@ async def login(
         value=access_token,
         max_age=settings.access_token_expire_minutes * 60,
         httponly=True,
-        secure=settings.is_production,
+        secure=settings.secure_session_cookie,
         samesite="strict",
         path="/api",
     )
@@ -123,7 +123,12 @@ async def logout(
     current_user.token_version = int(current_user.token_version or 0) + 1
     db.commit()
     db.refresh(current_user)
-    response.delete_cookie(key="huiwen_session", path="/api", secure=settings.is_production, samesite="strict")
+    response.delete_cookie(
+        key="huiwen_session",
+        path="/api",
+        secure=settings.secure_session_cookie,
+        samesite="strict",
+    )
 
     return {
         "code": 200,

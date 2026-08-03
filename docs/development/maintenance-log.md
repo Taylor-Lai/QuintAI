@@ -34,3 +34,4 @@
 
 - 前端请求客户端在开发和生产环境统一默认使用 `/api`，避免生产网关将无前缀 API 请求错误回退为 SPA 首页；
 - Playwright 测试改为针对 Vite 生产构建产物运行，覆盖生产环境变量分支和 Nginx 同源 API 路径约定。
+- 会话 Cookie 增加 `SESSION_COOKIE_SECURE` 显式覆盖项，默认继续跟随生产环境启用，仅供无域名的 HTTP/IP 临时验收使用。

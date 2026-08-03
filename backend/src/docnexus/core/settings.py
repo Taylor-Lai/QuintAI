@@ -16,6 +16,17 @@ def _split_csv(value: str) -> tuple[str, ...]:
     return tuple(item.strip() for item in value.split(",") if item.strip())
 
 
+def _optional_bool(value: str | None, *, name: str) -> bool | None:
+    if value is None or not value.strip():
+        return None
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    raise ValueError(f"{name} must be true or false")
+
+
 @dataclass(frozen=True, slots=True)
 class Settings:
     app_env: str
@@ -26,6 +37,7 @@ class Settings:
     bootstrap_admin_password: str | None
     cors_origins: tuple[str, ...]
     database_url: str
+    session_cookie_secure: bool | None = None
     data_dir: Path = Path("data")
     max_upload_bytes: int = 25 * 1024 * 1024
     max_upload_files: int = 10
@@ -41,6 +53,12 @@ class Settings:
     @property
     def is_production(self) -> bool:
         return self.app_env.lower() == "production"
+
+    @property
+    def secure_session_cookie(self) -> bool:
+        if self.session_cookie_secure is not None:
+            return self.session_cookie_secure
+        return self.is_production
 
     @property
     def has_bootstrap_admin(self) -> bool:
@@ -78,6 +96,9 @@ def get_settings() -> Settings:
             )
         ),
         database_url=os.getenv("DATABASE_URL", "sqlite:///./doc_system.db"),
+        session_cookie_secure=_optional_bool(
+            os.getenv("SESSION_COOKIE_SECURE"), name="SESSION_COOKIE_SECURE"
+        ),
         data_dir=Path(os.getenv("DATA_DIR", "data")),
         max_upload_bytes=int(os.getenv("MAX_UPLOAD_BYTES", str(25 * 1024 * 1024))),
         max_upload_files=int(os.getenv("MAX_UPLOAD_FILES", "10")),

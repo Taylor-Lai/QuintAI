@@ -45,7 +45,7 @@ docker compose logs --tail 200 gateway app worker scheduler
 
 ## HTTPS 网关
 
-默认 Compose 在 `HTTP_PORT`（默认 `8000`）提供 HTTP，适用于本地验收。公网单机部署应准备受信任证书，并在 `.env` 中配置：
+默认 Compose 在 `HTTP_PORT`（默认 `8000`）提供 HTTP，适用于本地验收。仅通过公网 IP 做临时 HTTP 测试时，可设置 `SESSION_COOKIE_SECURE=false` 使浏览器接受会话 Cookie；该配置会降低传输安全性，不属于正式生产方案。公网正式部署应准备受信任证书，保持 `SESSION_COOKIE_SECURE` 为空或设为 `true`，并在 `.env` 中配置：
 
 ```dotenv
 HTTP_PORT=80
