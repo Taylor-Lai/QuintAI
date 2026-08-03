@@ -4,11 +4,11 @@
 
 ## 当前结论
 
-评估日期：2026-08-02
+评估日期：2026-08-03
 
 | 发布范围 | 状态 | 说明 |
 | --- | --- | --- |
-| Web 与后端核心业务 | 受阻 | 最近完整基线为 15/15；本轮表格 5/5，信息提取 1/5，其余 4 项被 Docker 外部 TLS 阻断 |
+| Web 与后端核心业务 | 受阻 | 生产 API 路由缺陷已修复并通过生产产物浏览器测试；最近完整材料基线为 15/15，本轮信息提取仍有 4 项被 Docker 外部 TLS 阻断 |
 | Android 调试构建 | 受阻 | 本轮环境缺少 Java / `JAVA_HOME`，未重新执行 Android 测试、Lint 和构建 |
 | Android 应用商店发布 | 不通过 | 尚未用组织发布密钥完成候选 AAB/APK 与实体设备全量业务回归 |
 | 生产部署 | 不通过 | 正式域名、HTTPS、CORS、备份恢复、模型配额和告警仍须在目标环境确认 |
@@ -33,7 +33,7 @@
 | Python 标准回归 | 195 passed、8 deselected，覆盖率 71.08% | [持续测试日志](testing/test-log.md) |
 | 表格引擎确定性评估 | 3/3 | [持续测试日志](testing/test-log.md) |
 | Web 静态检查与构建 | lint 无错误；生产构建通过 | [持续测试日志](testing/test-log.md) |
-| Web 单元与浏览器测试 | 9/9 单元测试；4/4 Playwright | [持续测试日志](testing/test-log.md) |
+| Web 单元与浏览器测试 | 9/9 单元测试；生产构建产物 4/4 Playwright | [持续测试日志](testing/test-log.md) |
 | Web 依赖审计 | 0 vulnerabilities | [持续测试日志](testing/test-log.md) |
 | 15 套真实材料 | 最近完整基线 15/15；本轮表格 5/5、信息提取 1/5（4 项环境受阻） | [持续测试日志](testing/test-log.md) |
 | Android | 本轮未执行 | [持续测试日志](testing/test-log.md) |

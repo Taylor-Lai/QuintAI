@@ -15,6 +15,16 @@
 
 当前容器配置模型为 `qwen3.7-max-preview`。本轮真实 Web 定向复验结果见 `WT-20260802-01`；确定性代码回归不能替代被 Docker 外部 TLS 阻断的模型调用。
 
+## WT-20260803-01：生产网关认证路由修复
+
+- 生产部署发现首页“登录/注册”无法进入认证页；根因是请求客户端只在开发模式默认使用 `/api`，生产构建错误地请求 `/user/profile`，并被 Nginx SPA 回退返回首页 HTML；
+- 请求客户端的默认 API 根路径统一为 `/api`，所有认证、任务、文档、工作台与企业接口继续共用该客户端；
+- Playwright 运行器改为先执行 Vite 生产构建，再通过生产预览服务执行桌面与移动端流程，覆盖 `import.meta.env.DEV=false` 的真实构建分支；
+- Python：195 passed、8 deselected，覆盖率 71.08%；Ruff、Mypy、compileall 通过；表格引擎确定性评估 3/3；
+- Web：lint 0 warnings/0 errors；9/9 单元测试；生产构建通过；生产产物 Playwright 4/4；`npm audit` 为 0 vulnerabilities；
+- Android：当前机器仍缺少 Java / `JAVA_HOME`，单元测试、Lint 与构建受阻；
+- 结论：生产 API 路由缺陷已修复并由生产构建浏览器门禁覆盖；真实模型材料验收、目标服务器 HTTPS、备份恢复与告警仍未完成。
+
 ## WT-20260801-01：真实材料初始基线
 
 - 源码状态：业务完整性重构前；

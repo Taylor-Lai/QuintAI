@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
-import { createServer } from 'vite'
+import { build, preview } from 'vite'
 
 const host = '127.0.0.1'
 const port = 4173
@@ -9,15 +9,18 @@ const playwrightCli = fileURLToPath(
   new URL('../node_modules/@playwright/test/cli.js', import.meta.url),
 )
 
-const server = await createServer({
-  server: { host, port },
+await build({
+  logLevel: 'warn',
+})
+
+const server = await preview({
+  preview: { host, port },
   logLevel: 'warn',
 })
 
 let exitCode
 
 try {
-  await server.listen()
   exitCode = await new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [playwrightCli, 'test'], {
       cwd: process.cwd(),
@@ -28,7 +31,12 @@ try {
     child.once('exit', (code) => resolve(code ?? 1))
   })
 } finally {
-  await server.close()
+  await new Promise((resolve, reject) => {
+    server.httpServer.close((error) => {
+      if (error) reject(error)
+      else resolve()
+    })
+  })
 }
 
 process.exitCode = exitCode
