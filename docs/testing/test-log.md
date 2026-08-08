@@ -15,6 +15,14 @@
 
 当前容器配置模型为 `qwen3.7-max-preview`。本轮真实 Web 定向复验结果见 `WT-20260802-01`；确定性代码回归不能替代被 Docker 外部 TLS 阻断的模型调用。
 
+## WT-20260808-01：候选产物重新构建
+
+- Python 3.11.15：197 passed、8 deselected，覆盖率 71.28%；Ruff、Mypy、compileall 通过；表格引擎确定性评估 3/3；
+- Web：lint 0 warnings/0 errors，9/9 单元测试，生产构建通过，Playwright 4/4，`npm audit` 为 0 vulnerabilities；
+- Android：使用 Android Studio JBR 21，从临时 ASCII 盘符执行 3 项单元测试、Lint 和 Debug APK 构建，全部通过；
+- 依赖安全：升级锁文件中的 `nanoid` 与 `postcss` 补丁版本，消除 1 项高危和 1 项中危公告；
+- 结论：本地确定性代码门禁与 Android Debug 构建通过；真实模型材料、实体设备和目标生产环境验收仍需独立执行。
+
 ## WT-20260803-01：生产网关认证路由修复
 
 - 生产部署发现首页“登录/注册”无法进入认证页；根因是请求客户端只在开发模式默认使用 `/api`，生产构建错误地请求 `/user/profile`，并被 Nginx SPA 回退返回首页 HTML；

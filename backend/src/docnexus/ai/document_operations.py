@@ -345,9 +345,15 @@ def _build_document_aware_plan(command: str, doc: Document) -> FormatPlan:
         label, replacement = entity_replacement.groups()
         label = label.strip()
         for text in texts:
-            match = re.search(rf"{re.escape(label)}\s*[：:]\s*([^·，,；;。\n]+)", text)
-            if match:
-                actions.append(FormatAction(operation="replace", target_text=match.group(1).strip(), content=replacement))
+            entity_match = re.search(rf"{re.escape(label)}\s*[：:]\s*([^·，,；;。\n]+)", text)
+            if entity_match:
+                actions.append(
+                    FormatAction(
+                        operation="replace",
+                        target_text=entity_match.group(1).strip(),
+                        content=replacement,
+                    )
+                )
 
     paragraph_text = "\n".join(paragraph.text for paragraph in doc.paragraphs)
     base_date_match = re.search(r"(\d{4})\s*[年/-]\s*(\d{1,2})\s*[月/-]\s*(\d{1,2})\s*日?", paragraph_text)
@@ -359,10 +365,10 @@ def _build_document_aware_plan(command: str, doc: Document) -> FormatPlan:
     todo_rows: list[list[str]] = []
     weekday_numbers = {"周一": 0, "周二": 1, "周三": 2, "周四": 3, "周五": 4, "周六": 5, "周日": 6}
     for paragraph in doc.paragraphs:
-        match = re.match(r"(.+?)负责(.+?)[，,]\s*(周[一二三四五六日天])完成", paragraph.text.strip())
-        if not match:
+        todo_match = re.match(r"(.+?)负责(.+?)[，,]\s*(周[一二三四五六日天])完成", paragraph.text.strip())
+        if not todo_match:
             continue
-        owner, item, weekday = match.groups()
+        owner, item, weekday = todo_match.groups()
         due = weekday
         if base_date:
             target_weekday = weekday_numbers[weekday.replace("周天", "周日")]
@@ -399,9 +405,9 @@ def _build_document_aware_plan(command: str, doc: Document) -> FormatPlan:
         source = next((p.text for i, p in enumerate(doc.paragraphs) if i and doc.paragraphs[i - 1].text.strip() == "计划"), "")
         milestones = []
         for item in [value.strip(" 。") for value in re.split(r"[；;]", source) if value.strip(" 。")]:
-            match = re.match(r"(\d{1,2})\s*月(.+)", item)
-            if match:
-                month, task = match.groups()
+            milestone_match = re.match(r"(\d{1,2})\s*月(.+)", item)
+            if milestone_match:
+                month_text, task = milestone_match.groups()
                 normalized_task = task.strip()
                 if "高校试点" in normalized_task:
                     normalized_task = re.sub(r"^完成\s*", "", normalized_task).replace("3 所", "3 所")
@@ -413,7 +419,11 @@ def _build_document_aware_plan(command: str, doc: Document) -> FormatPlan:
                     acceptance = "提交复盘报告"
                 else:
                     acceptance = "达到约定验收标准"
-                milestones.append([f"{base_date.year if base_date else datetime.now().year}-{int(month):02d}", normalized_task, acceptance])
+                milestones.append([
+                    f"{base_date.year if base_date else datetime.now().year}-{int(month_text):02d}",
+                    normalized_task,
+                    acceptance,
+                ])
         if milestones:
             content = "\n".join("|".join(row) for row in [["时间", "事项", "验收标准"], *milestones])
             actions.append(FormatAction(operation="structure", target_text=source, content=content))

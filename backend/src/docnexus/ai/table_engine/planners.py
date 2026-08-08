@@ -175,41 +175,6 @@ def _extract_date_constraints(user_request_doc: CanonicalDocument, request_text:
     return []
 
 
-def _candidate_entity_values(request_text: str, hint: str) -> list[str]:
-    values: list[str] = []
-    quoted = re.findall(r"[\u201c\u201d\"'\u300a\u300b]([^'\"]{1,30})[\u201c\u201d\"'\u300a\u300b]", request_text)
-    values.extend(value.strip() for value in quoted if value.strip())
-
-    if hint == "\u57ce\u5e02":
-        values.extend(re.findall(r"([\u4e00-\u9fff]{2,10}\u5e02)", request_text))
-    elif hint == "\u56fd\u5bb6/\u5730\u533a":
-        for value in ("China", "United States", "USA", "US", "\u4e2d\u56fd", "\u7f8e\u56fd", "\u65e5\u672c", "\u97e9\u56fd", "\u82f1\u56fd", "\u5fb7\u56fd", "\u6cd5\u56fd"):
-            if value.lower() in request_text.lower():
-                values.append(value)
-    elif hint == "\u7701\u4efd":
-        values.extend(re.findall(r"([\u4e00-\u9fff]{2,10}(?:\u7701|\u81ea\u6cbb\u533a|\u76f4\u8f96\u5e02))", request_text))
-    elif hint == "\u7ad9\u70b9\u540d\u79f0":
-        values.extend(re.findall(r"([\u4e00-\u9fffA-Za-z0-9_-]{2,20}(?:\u7ad9|\u76d1\u6d4b\u70b9))", request_text))
-
-    cleaned: list[str] = []
-    for value in values:
-        value = value.strip(" ,，。；;、")
-        changed = True
-        while changed:
-            changed = False
-            for prefix in ENTITY_PREFIXES:
-                if value.startswith(prefix) and len(value) > len(prefix):
-                    value = value[len(prefix):]
-                    changed = True
-        if hint == "\u57ce\u5e02" and value in ENTITY_STOPWORDS:
-            continue
-        if hint == "\u57ce\u5e02" and not re.fullmatch(r"[\u4e00-\u9fff]{2,8}\u5e02", value):
-            continue
-        if value and value not in ENTITY_STOPWORDS and value not in cleaned:
-            cleaned.append(value)
-    return cleaned
-
-
 def _extract_entity_constraints(user_request_doc: CanonicalDocument, request_text: str, target_fields: list[str]) -> list[Constraint]:
     constraints: list[Constraint] = []
     for canonical_field, aliases in ENTITY_FIELD_HINTS.items():

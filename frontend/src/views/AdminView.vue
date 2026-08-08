@@ -22,12 +22,52 @@
             <span class="menu-icon">👤</span>
             <span v-if="!sidebarCollapsed" class="menu-text">用户管理</span>
           </div>
+          <div class="menu-item" @click="goPage('/workspace/enterprise')">
+            <span class="menu-icon">▦</span>
+            <span v-if="!sidebarCollapsed" class="menu-text">企业控制台</span>
+          </div>
+          <div class="menu-item" @click="goPage('/workspace')">
+            <span class="menu-icon">⌂</span>
+            <span v-if="!sidebarCollapsed" class="menu-text">返回工作台</span>
+          </div>
+        </div>
 
+        <div v-if="!sidebarCollapsed" class="sidebar-note">
+          <span>管理员中心</span>
+          <p>管理平台用户与账号权限，企业能力请前往企业控制台。</p>
         </div>
       </aside>
 
       <!-- 右侧内容区域 -->
       <main class="main-content">
+        <section class="overview-card">
+          <div class="overview-heading">
+            <div>
+              <span class="eyebrow">ADMIN OVERVIEW</span>
+              <h1>管理概览</h1>
+              <p>快速了解平台用户与当前登录情况</p>
+            </div>
+            <button class="enterprise-btn" @click="goPage('/workspace/enterprise')">
+              企业控制台 <span>→</span>
+            </button>
+          </div>
+
+          <div class="statistics-grid">
+            <article class="stat-card">
+              <span class="stat-icon">人</span>
+              <div><strong>{{ statistics.totalUsers }}</strong><small>注册用户</small></div>
+            </article>
+            <article class="stat-card">
+              <span class="stat-icon success">✓</span>
+              <div><strong>{{ statistics.activeUsers }}</strong><small>正常账号</small></div>
+            </article>
+            <article class="stat-card">
+              <span class="stat-icon online">●</span>
+              <div><strong>{{ statistics.onlineUsers }}</strong><small>当前在线</small></div>
+            </article>
+          </div>
+        </section>
+
         <!-- 工具栏 -->
         <section class="toolbar-card">
           <div class="toolbar-left">
@@ -567,13 +607,15 @@ onMounted(() => {
 /* 左侧导航栏 */
 .sidebar {
   width: 240px;
-  min-height: calc(100vh - 120px);
+  min-height: 360px;
   background: #f8f8f8;
   border-radius: 20px;
   padding: 20px 18px;
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.05);
   flex-shrink: 0;
   transition: width 0.25s ease, padding 0.25s ease;
+  position: sticky;
+  top: 20px;
 }
 
 .sidebar.collapsed {
@@ -619,6 +661,27 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.sidebar-note {
+  margin: 24px 6px 0;
+  padding: 16px;
+  border-radius: 14px;
+  background: linear-gradient(145deg, #f5ecdf, #f8f5f0);
+  border: 1px solid #eadcc7;
+}
+
+.sidebar-note span {
+  color: #9a6c2d;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.sidebar-note p {
+  margin: 8px 0 0;
+  color: #8d867e;
+  font-size: 12px;
+  line-height: 1.65;
 }
 
 .menu-item {
@@ -670,6 +733,87 @@ onMounted(() => {
   gap: 24px;
   min-width: 0;
 }
+
+.overview-card {
+  padding: 28px;
+  border-radius: 20px;
+  background: linear-gradient(135deg, #faf7f1 0%, #f6eddf 100%);
+  border: 1px solid #e8dac5;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.05);
+}
+
+.overview-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 22px;
+}
+
+.overview-heading h1 {
+  margin: 5px 0 4px;
+  color: #2d2d2d;
+  font-size: 26px;
+}
+
+.overview-heading p {
+  margin: 0;
+  color: #918a81;
+  font-size: 14px;
+}
+
+.eyebrow {
+  color: #ae7d3b;
+  font: 700 11px/1.2 system-ui, sans-serif;
+  letter-spacing: 1.5px;
+}
+
+.enterprise-btn {
+  height: 42px;
+  padding: 0 18px;
+  border: 1px solid #dfc9a9;
+  border-radius: 21px;
+  background: rgba(255, 255, 255, 0.72);
+  color: #8a611d;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.enterprise-btn:hover { background: #fff; }
+
+.statistics-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.stat-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid rgba(226, 214, 195, 0.9);
+  border-radius: 15px;
+  background: rgba(255, 255, 255, 0.76);
+}
+
+.stat-card div { display: grid; gap: 2px; }
+.stat-card strong { color: #312d28; font-size: 24px; line-height: 1; }
+.stat-card small { color: #958d84; font-size: 12px; }
+
+.stat-icon {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  background: #ead9be;
+  color: #93662b;
+  font-weight: 700;
+}
+
+.stat-icon.success { background: #e4f1e6; color: #4f8a61; }
+.stat-icon.online { background: #e3eff8; color: #4380ad; }
 
 .toolbar-card,
 .table-card {
@@ -1194,6 +1338,7 @@ onMounted(() => {
     width: 100%;
     min-height: auto;
     padding: 20px;
+    position: static;
   }
 
   .sidebar-menu {
@@ -1222,6 +1367,7 @@ onMounted(() => {
 }
 
 @media (max-width: 768px) {
+  .overview-card,
   .toolbar-card,
   .table-card,
   .sidebar,
@@ -1264,6 +1410,14 @@ onMounted(() => {
   .menu-item,
   .sidebar.collapsed .menu-item {
     flex: 1 1 100%;
+  }
+
+  .overview-heading {
+    flex-direction: column;
+  }
+
+  .statistics-grid {
+    grid-template-columns: 1fr;
   }
 
   .sidebar-top {

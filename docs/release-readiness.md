@@ -4,12 +4,12 @@
 
 ## 当前结论
 
-评估日期：2026-08-03
+评估日期：2026-08-08
 
 | 发布范围 | 状态 | 说明 |
 | --- | --- | --- |
 | Web 与后端核心业务 | 受阻 | 生产 API 路由缺陷已修复并通过生产产物浏览器测试；最近完整材料基线为 15/15，本轮信息提取仍有 4 项被 Docker 外部 TLS 阻断 |
-| Android 调试构建 | 受阻 | 本轮环境缺少 Java / `JAVA_HOME`，未重新执行 Android 测试、Lint 和构建 |
+| Android 调试构建 | 通过 | Android Studio JBR 21 环境下单元测试、Lint 与 Debug APK 干净构建通过 |
 | Android 应用商店发布 | 不通过 | 尚未用组织发布密钥完成候选 AAB/APK 与实体设备全量业务回归 |
 | 生产部署 | 不通过 | 正式域名、HTTPS、CORS、备份恢复、模型配额和告警仍须在目标环境确认 |
 
@@ -36,14 +36,13 @@
 | Web 单元与浏览器测试 | 9/9 单元测试；生产构建产物 4/4 Playwright | [持续测试日志](testing/test-log.md) |
 | Web 依赖审计 | 0 vulnerabilities | [持续测试日志](testing/test-log.md) |
 | 15 套真实材料 | 最近完整基线 15/15；本轮表格 5/5、信息提取 1/5（4 项环境受阻） | [持续测试日志](testing/test-log.md) |
-| Android | 本轮未执行 | [持续测试日志](testing/test-log.md) |
+| Android | 单元测试、Lint、Debug APK 构建通过 | [持续测试日志](testing/test-log.md) |
 
 ## 发布前仍需完成
 
-1. 在具备 Java 环境的构建机执行 Android 单元测试、Lint、Debug/Release 构建；
-2. 使用组织发布密钥验证候选 AAB/APK，并在至少一台实体设备完成核心业务回归；
-3. 在目标生产环境确认域名、HTTPS、CORS、数据库备份恢复、模型配额和告警；
-4. 以上门禁全部重新执行后，按[测试记录规范](testing/README.md)写入新的候选版本结论。
+1. 使用组织发布密钥验证候选 AAB/APK，并在至少一台实体设备完成核心业务回归；
+2. 在目标生产环境确认域名、HTTPS、CORS、数据库备份恢复、模型配额和告警；
+3. 以上门禁全部重新执行后，按[测试记录规范](testing/README.md)写入新的候选版本结论。
 
 ## 历史记录
 

@@ -6,7 +6,7 @@ from sqlalchemy.orm import declarative_base, sessionmaker
 from docnexus.core.settings import get_settings
 
 DATABASE_URL = get_settings().database_url
-engine_options = (
+engine_options: dict[str, object] = (
     {"connect_args": {"check_same_thread": False}}
     if DATABASE_URL.startswith("sqlite")
     else {"pool_pre_ping": True, "pool_recycle": 1800}

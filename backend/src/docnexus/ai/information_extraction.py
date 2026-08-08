@@ -6,6 +6,7 @@ import logging
 import re
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
+from typing import Any, cast
 
 from docx import Document
 from langchain_core.prompts import ChatPromptTemplate
@@ -329,14 +330,14 @@ def handle_information_extraction(input_data):
     output_schema = _schema_classes()
     try:
         full_text = _read_document_text(input_data.file_path)
-        fields_spec = {
+        fields_spec: dict[str, tuple[Any, Any]] = {
             # Some OpenAI-compatible models legitimately represent repeated
             # facts as a JSON array. Accept that shape and normalize it below
             # instead of failing the entire extraction during Pydantic parse.
             entity: (str | list[str], Field(default="未找到", description=f"提取 '{entity}' 的内容"))
             for entity in input_data.target_entities
         }
-        dynamic_model = create_model("DynamicExtractionModel", **fields_spec)
+        dynamic_model = create_model("DynamicExtractionModel", **cast(dict[str, Any], fields_spec))
         chunks = chunk_text(full_text)
         deterministic_fields = _extract_incident_fields(full_text, input_data.target_entities)
 
@@ -366,7 +367,8 @@ def handle_information_extraction(input_data):
                 chunk_results[0].update(deterministic_fields)
 
         extracted_data = merge_chunk_extractions(chunk_results, chunks, input_data.target_entities, full_text)
-        if extracted_data.get("_meta", {}).get("found_field_count", 0) == 0:
+        extracted_meta = cast(dict[str, object], extracted_data.get("_meta", {}))
+        if extracted_meta.get("found_field_count", 0) == 0:
             return output_schema(status="failed", message="未从源材料中找到任何请求字段，任务未生成有效结果。")
         return output_schema(status="success", extracted_data=extracted_data)
 
@@ -428,12 +430,12 @@ def merge_chunk_extractions(
     full_text: str,
 ) -> dict[str, object]:
     merged = _merge_chunk_candidates(chunk_results, chunks, target_entities, full_text)
-    meta = merged.setdefault("_meta", {})
-    evidence = meta.setdefault("evidence", {})
-    normalized = meta.setdefault("normalized", {})
-    confidence = meta.setdefault("confidence", {})
-    candidates = meta.setdefault("candidates", {})
-    validation = meta.setdefault("validation", {})
+    meta = cast(dict[str, object], merged.setdefault("_meta", {}))
+    evidence = cast(dict[str, object], meta.setdefault("evidence", {}))
+    normalized = cast(dict[str, object], meta.setdefault("normalized", {}))
+    confidence = cast(dict[str, object], meta.setdefault("confidence", {}))
+    candidates = cast(dict[str, list[object]], meta.setdefault("candidates", {}))
+    validation = cast(dict[str, dict[str, object]], meta.setdefault("validation", {}))
 
     document_date_match = _UNICODE_DATE_RE.search(full_text)
     document_date = _format_unicode_date(document_date_match) if document_date_match else None

@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
+from typing import Any, cast
 
 
 class DictSerializable:
     """Simple mixin for JSON-friendly serialization."""
 
-    def to_dict(self) -> dict:
-        return asdict(self)
+    def to_dict(self) -> dict[str, object]:
+        return cast(dict[str, object], asdict(cast(Any, self)))
 
 
 @dataclass(slots=True)
