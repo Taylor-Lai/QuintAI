@@ -45,6 +45,8 @@ def get_chat_llm():
                 temperature=0,
                 api_key=OPENAI_API_KEY,
                 base_url=OPENAI_BASE_URL or None,
+                timeout=LLM_TIMEOUT_SECONDS,
+                max_retries=LLM_MAX_RETRIES,
             )
         else:
             raise ValueError("请在 .env 文件中配置 ZHIPU_API_KEY 或 OPENAI_API_KEY")

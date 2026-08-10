@@ -2,6 +2,8 @@ import json
 import shutil
 import sys
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -24,11 +26,47 @@ from docnexus.ai.document_operations import (
 )
 from docnexus.ai.information_extraction import (
     _extract_incident_fields,
+    _invoke_extraction_chunks,
     handle_information_extraction,
     merge_chunk_extractions,
     normalize_field_value,
 )
 from docx import Document
+
+
+class InformationExtractionConcurrencyTests(unittest.TestCase):
+    def test_chunk_requests_run_concurrently_and_keep_source_order(self) -> None:
+        lock = threading.Lock()
+        active = 0
+        max_active = 0
+
+        class Result:
+            def __init__(self, value: str) -> None:
+                self.value = value
+
+            def model_dump(self) -> dict[str, str]:
+                return {"字段": self.value}
+
+        class Chain:
+            def invoke(self, payload: dict[str, object]) -> Result:
+                nonlocal active, max_active
+                with lock:
+                    active += 1
+                    max_active = max(max_active, active)
+                time.sleep(0.03)
+                with lock:
+                    active -= 1
+                return Result(str(payload["text"]))
+
+        chunks = [
+            {"chunk_id": index, "start": index, "end": index + 1, "text": str(index)}
+            for index in range(4)
+        ]
+        with patch("docnexus.ai.information_extraction.LLM_CONCURRENCY", 2):
+            results = _invoke_extraction_chunks(Chain(), chunks, ["字段"])
+
+        self.assertEqual([item["字段"] for item in results], ["0", "1", "2", "3"])
+        self.assertEqual(max_active, 2)
 
 
 def _document_test_snapshot(doc: Document) -> dict[str, object]:
@@ -97,6 +135,7 @@ class DocumentOperationModelTests(unittest.TestCase):
 
     def test_extraction_normalizes_business_field_shapes(self) -> None:
         self.assertEqual(normalize_field_value("采购内容", "GPU 云算力服务 12 个月"), "GPU 云算力服务")
+        self.assertEqual(normalize_field_value("单批交付周期", "7 个工作日内"), "7 个工作日")
         self.assertEqual(
             normalize_field_value("付款条件", "合同生效后 30%，验收后 60%，质保后 10%。"),
             "30%/60%/10%",

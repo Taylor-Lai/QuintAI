@@ -38,7 +38,7 @@ def build_registry(config: AppConfig | None = None) -> ComponentRegistry:
     registry.config = config or AppConfig()
 
     docling_parser = DoclingSourceParser()
-    if not docling_parser._converter:
+    if not docling_parser.is_available:
         logger.warning(
             "docling is not installed or failed to initialize; "
             "source documents will be parsed with DocxParser/XlsxParser instead. "

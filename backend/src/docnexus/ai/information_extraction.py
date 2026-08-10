@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+from concurrent.futures import ThreadPoolExecutor
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, cast
@@ -12,9 +13,26 @@ from docx import Document
 from langchain_core.prompts import ChatPromptTemplate
 from pydantic import Field, create_model
 
-from docnexus.ai.llm import get_chat_llm
+from docnexus.ai.llm import LLM_CONCURRENCY, get_chat_llm
 
 logger = logging.getLogger(__name__)
+
+
+def _invoke_extraction_chunks(chain, chunks: list[dict[str, object]], entities: list[str]) -> list[dict[str, object]]:
+    """Extract chunks concurrently while preserving their source order."""
+
+    entity_text = ", ".join(entities)
+
+    def invoke(chunk: dict[str, object]) -> dict[str, object]:
+        result = chain.invoke({"text": chunk["text"], "entities": entity_text})
+        return {} if result is None else result.model_dump()
+
+    worker_count = min(max(1, LLM_CONCURRENCY), len(chunks))
+    if worker_count == 1:
+        return [invoke(chunk) for chunk in chunks]
+    with ThreadPoolExecutor(max_workers=worker_count, thread_name_prefix="extraction") as executor:
+        return list(executor.map(invoke, chunks))
+
 
 def _schema_classes():
     try:
@@ -141,6 +159,10 @@ def normalize_field_value(field_name: str, value: object) -> object:
         # Duration belongs in a dedicated service-period field. Do not let a
         # model concatenate the adjacent duration into the purchased item.
         text = re.sub(r"\s+\d+(?:\.\d+)?\s*(?:个?月|年|天)\s*$", "", text).strip()
+    if "交付周期" in normalized_name:
+        # Keep duration fields stable when a model adds a synonymous deadline
+        # suffix, for example "7 个工作日内" versus "7 个工作日".
+        text = re.sub(r"内$", "", text).strip()
     if "违约金规则" in normalized_name:
         text = text.replace("千分之一", "0.1%")
         text = re.sub(r"^按", "", text)
@@ -356,13 +378,11 @@ def handle_information_extraction(input_data):
                 ("human", "请提取以下字段：{entities}"),
             ])
 
-            chunk_results = []
-            for chunk in chunks:
-                result = (prompt | structured_llm).invoke({
-                    "text": chunk["text"],
-                    "entities": ", ".join(input_data.target_entities),
-                })
-                chunk_results.append({} if result is None else result.model_dump())
+            chunk_results = _invoke_extraction_chunks(
+                prompt | structured_llm,
+                chunks,
+                input_data.target_entities,
+            )
             if deterministic_fields:
                 chunk_results[0].update(deterministic_fields)
 

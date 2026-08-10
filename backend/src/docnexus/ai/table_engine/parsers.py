@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import logging
 import xml.etree.ElementTree as ET
+from functools import lru_cache
 from pathlib import Path
+from typing import Any
 from zipfile import ZipFile
 
 from openpyxl import load_workbook
@@ -26,6 +29,20 @@ except ImportError:  # pragma: no cover - optional dependency path
     DocumentConverter = None
 
 W_NS = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+logger = logging.getLogger(__name__)
+
+
+@lru_cache(maxsize=1)
+def _get_docling_converter() -> Any | None:
+    """Initialize Docling once per worker process instead of once per task."""
+
+    if DocumentConverter is None:
+        return None
+    try:
+        return DocumentConverter()
+    except Exception:
+        logger.exception("Docling converter initialization failed; using built-in parsers")
+        return None
 
 
 def normalize_header_name(value: str) -> str:
@@ -38,12 +55,24 @@ class DoclingSourceParser:
     supported_exts = {"docx", "xlsx"}
 
     def __init__(self) -> None:
-        self._converter = DocumentConverter() if DocumentConverter is not None else None
+        self._converter: Any | None = None
+
+    @property
+    def is_available(self) -> bool:
+        return DocumentConverter is not None
 
     def supports(self, file: FileAsset) -> bool:
-        return self._converter is not None and file.role == "source" and file.ext in self.supported_exts
+        if file.role != "source" or file.ext not in self.supported_exts or not self.is_available:
+            return False
+        if self._converter is None:
+            self._converter = _get_docling_converter()
+        return self._converter is not None
 
     def parse(self, file: FileAsset) -> CanonicalDocument:
+        if self._converter is None:
+            self._converter = _get_docling_converter()
+        if self._converter is None:
+            raise RuntimeError("Docling converter is unavailable")
         result = self._converter.convert(file.path)
         doc = result.document
 
@@ -374,4 +403,3 @@ class XlsxParser:
             metadata={"parser": "XlsxParser", "sheet_count": len(workbook.worksheets)},
             tables=tables,
         )
-
