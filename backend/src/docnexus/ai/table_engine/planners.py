@@ -100,7 +100,8 @@ def _format_date(year: str, month: str, day: str) -> str:
 
 
 def _normalize_field_name(value: str) -> str:
-    return "".join(str(value).split()).strip().lower().replace("_", "").replace("-", "")
+    value = re.sub(r"[（(][^）)]*[）)]", "", str(value))
+    return "".join(value.split()).strip().lower().replace("_", "").replace("-", "")
 
 
 def _target_fields(template_spec: TemplateSpec) -> list[str]:
@@ -255,7 +256,9 @@ def _extract_sort_and_limit_constraints(user_request_doc: CanonicalDocument, req
 
     sort_field = None
     sort_phrase = re.search(
-        r"(?:\u6309|\u4f9d\u636e|by)\s*([\u4e00-\u9fffA-Za-z0-9_/%.-]{1,30})\s*(?:\u964d\u5e8f|\u5347\u5e8f|\u6392\u5e8f|desc|asc)",
+        r"(?:\u6309|\u4f9d\u636e|by)\s*([\u4e00-\u9fffA-Za-z0-9_/%（）().-]{1,30}?)\s*"
+        r"(?:(?:\u4ece|\u7531)?(?:\u9ad8\u5230\u4f4e|\u4f4e\u5230\u9ad8)(?:\u6392\u5217|\u6392\u5e8f)?|"
+        r"\u964d\u5e8f|\u5347\u5e8f|\u6392\u5e8f|desc|asc)",
         request_text,
         re.IGNORECASE,
     )
@@ -295,6 +298,43 @@ def _extract_sort_and_limit_constraints(user_request_doc: CanonicalDocument, req
     return constraints
 
 
+def _extract_inclusion_constraints(
+    user_request_doc: CanonicalDocument,
+    request_text: str,
+    target_fields: list[str],
+) -> list[Constraint]:
+    match = re.search(r"(?:仅|只)保留\s*(.+?)(?=，|。|；|;|排除|并|$)", request_text)
+    if not match:
+        return []
+    values = [
+        re.sub(r"(?:的)?记录$", "", item.strip()).strip()
+        for item in re.split(r"、|，|,|和|及", match.group(1))
+        if re.sub(r"(?:的)?(?:记录|数据)$", "", item.strip()).strip()
+    ]
+    if len(values) < 2:
+        return []
+    identity_field = next(
+        (
+            field
+            for field in target_fields
+            if any(token in field for token in ("供应商", "项目名称", "名称", "单位", "地区", "区域", "城市"))
+        ),
+        None,
+    )
+    if identity_field is None:
+        return []
+    return [
+        Constraint(
+            constraint_id=f"{user_request_doc.doc_id}#include-values",
+            source="user_request",
+            kind="field_filter",
+            field=identity_field,
+            operator="in",
+            value=values,
+        )
+    ]
+
+
 def _extract_selected_field_constraints(user_request_doc: CanonicalDocument, request_text: str, target_fields: list[str]) -> list[Constraint]:
     selected = [field for field in target_fields if field and field in request_text]
     if len(selected) <= 1:
@@ -329,6 +369,7 @@ def _extract_request_constraints(user_request_doc: CanonicalDocument, request_te
     constraints.extend(_extract_entity_constraints(user_request_doc, request_text, fields))
     constraints.extend(_extract_comparison_constraints(user_request_doc, request_text, fields))
     constraints.extend(_extract_sort_and_limit_constraints(user_request_doc, request_text, fields))
+    constraints.extend(_extract_inclusion_constraints(user_request_doc, request_text, fields))
     constraints.extend(_extract_selected_field_constraints(user_request_doc, request_text, fields))
     return _dedupe_constraints(constraints)
 

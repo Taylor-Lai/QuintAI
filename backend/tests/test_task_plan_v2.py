@@ -703,3 +703,27 @@ def test_verifier_accepts_entity_grouped_date_sort() -> None:
     ]
 
     assert _task_constraint_violations(records, task) == []
+
+
+def test_verifier_accepts_text_inclusion_filter() -> None:
+    task = TaskSpec(
+        "task",
+        "fill_table",
+        "template",
+        constraints=[
+            Constraint(
+                "filter",
+                "user_request",
+                "field_filter",
+                "区域",
+                "in",
+                ["华东区", "华南区", "华北区"],
+            )
+        ],
+    )
+    records = [
+        StructuredRecord("r1", "t", {"区域": "华东区"}),
+        StructuredRecord("r2", "t", {"区域": "华南区"}),
+    ]
+
+    assert _task_constraint_violations(records, task) == []

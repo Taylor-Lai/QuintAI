@@ -166,13 +166,19 @@ def _date_text(value: object) -> str:
 
 
 def _compare(value: object, operator: str, expected: object) -> bool:
+    normalized_operator = str(operator or "").lower()
+    if normalized_operator in {"in", "not_in", "contains", "not_contains"}:
+        expected_values = expected if isinstance(expected, (list, tuple, set)) else [expected]
+        actual_text = str(value or "").strip().lower()
+        matches = any(str(item or "").strip().lower() in actual_text for item in expected_values)
+        return not matches if normalized_operator in {"not_in", "not_contains"} else matches
+
     left_number = _number(value)
     right_number = _number(expected)
     if left_number is not None and right_number is not None:
         left, right = left_number, right_number
     else:
         left, right = str(value or "").strip().lower(), str(expected or "").strip().lower()
-    normalized_operator = str(operator or "").lower()
     if normalized_operator in {">", "gt"}:
         return left > right
     if normalized_operator in {">=", "gte"}:

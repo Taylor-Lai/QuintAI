@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 from concurrent.futures import ThreadPoolExecutor
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -24,8 +25,18 @@ def _invoke_extraction_chunks(chain, chunks: list[dict[str, object]], entities: 
     entity_text = ", ".join(entities)
 
     def invoke(chunk: dict[str, object]) -> dict[str, object]:
-        result = chain.invoke({"text": chunk["text"], "entities": entity_text})
-        return {} if result is None else result.model_dump()
+        for attempt in range(3):
+            try:
+                result = chain.invoke({"text": chunk["text"], "entities": entity_text})
+                return {} if result is None else result.model_dump()
+            except Exception as exc:
+                # DashScope can transiently return Workspace.AccessDenied for
+                # an otherwise valid workspace. Retry only this narrow case;
+                # permanent authentication and validation failures still fail fast.
+                if "Workspace.AccessDenied" not in str(exc) or attempt == 2:
+                    raise
+                time.sleep(1 << attempt)
+        return {}  # pragma: no cover - loop always returns or raises
 
     worker_count = min(max(1, LLM_CONCURRENCY), len(chunks))
     if worker_count == 1:
@@ -89,6 +100,70 @@ def _extract_incident_fields(full_text: str, target_entities: list[str]) -> dict
     return extracted
 
 
+def _extract_procurement_fields(full_text: str, target_entities: list[str]) -> dict[str, object]:
+    if "采购申请" not in full_text or not all(token in full_text for token in ("申请部门", "供应商", "采购内容")):
+        return {}
+    extracted: dict[str, object] = {}
+    for field_name in ("申请部门", "申请人", "供应商"):
+        if field_name not in target_entities:
+            continue
+        match = re.search(rf"(?m)^{field_name}\s*[：:]\s*(.+?)\s*$", full_text)
+        if match:
+            extracted[field_name] = match.group(1).strip()
+
+    content_match = re.search(r"(?m)^采购内容\s*[：:]\s*(.+?)\s*$", full_text)
+    if content_match:
+        content = content_match.group(1).strip()
+        duration_match = re.search(r"(\d+(?:\.\d+)?\s*(?:个?月|年|天))\s*$", content)
+        if "服务期限" in target_entities and duration_match:
+            extracted["服务期限"] = normalize_field_value("服务期限", duration_match.group(1))
+        if "采购内容" in target_entities:
+            extracted["采购内容"] = normalize_field_value("采购内容", content)
+
+    labeled_patterns = {
+        "含税总额": r"(?m)^含税总额\s*[：:]\s*(.+?)\s*$",
+        "付款条件": r"(?m)^付款条件\s*[：:]\s*(.+?)\s*$",
+        "开通日期": r"(?m)^期望到货/开通日期\s*[：:]\s*(.+?)\s*$",
+    }
+    for field_name, pattern in labeled_patterns.items():
+        if field_name not in target_entities:
+            continue
+        match = re.search(pattern, full_text)
+        if match:
+            extracted[field_name] = normalize_field_value(field_name, match.group(1))
+    return extracted
+
+
+def _extract_weekly_report_fields(full_text: str, target_entities: list[str]) -> dict[str, object]:
+    if "周报" not in full_text or not all(token in full_text for token in ("定稿", "下周目标")):
+        return {}
+    extracted: dict[str, object] = {}
+    patterns: dict[str, str] = {
+        "报告周期": r"第\s*(\d+)\s*周周报",
+        "采用版本": r"(版本\s*[A-ZＡ-Ｚ]\s*[（(][^）)]*定稿[）)])",
+        "本周完成接口数": r"定稿[^\n]*?本周完成接口\s*(\d+)",
+        "剩余阻塞问题数": r"定稿[^\n]*?剩余\s*(\d+)\s*个",
+        "整体进度": r"定稿[^\n]*?整体进度[^\d]*(\d+(?:\.\d+)?%)",
+        "风险责任人": r"责任人\s*([^，,。；;\s]+)",
+        "预计解除日期": r"预计\s*(\d{4}-\d{1,2}-\d{1,2})\s*解除",
+        "主要风险": r"(?m)^风险\s*[：:]\s*(.+?)，\s*责任人",
+        "下周目标": r"(?m)^下周目标\s*[：:]\s*(.+?)[。.]?\s*$",
+    }
+    for field_name, pattern in patterns.items():
+        if field_name not in target_entities:
+            continue
+        match = re.search(pattern, full_text)
+        if not match:
+            continue
+        value = match.group(1).strip(" 。.")
+        if field_name == "报告周期":
+            value = f"第 {value} 周"
+        elif field_name == "采用版本":
+            value = re.sub(r"版本\s*([A-ZＡ-Ｚ])", r"版本 \1", value)
+        extracted[field_name] = normalize_field_value(field_name, value)
+    return extracted
+
+
 def chunk_text(text: str, chunk_size: int = EXTRACTION_CHUNK_SIZE, overlap: int = EXTRACTION_CHUNK_OVERLAP) -> list[dict[str, object]]:
     if not text:
         return [{"chunk_id": 0, "start": 0, "end": 0, "text": ""}]
@@ -148,9 +223,11 @@ def normalize_field_value(field_name: str, value: object) -> object:
             except InvalidOperation:
                 pass
     if "付款条件" in normalized_name:
-        percentages = re.findall(r"\d+(?:\.\d+)?%", text)
-        if percentages:
-            return "/".join(percentages)
+        # Keep the conditions associated with each installment.  Returning
+        # only the percentages discards when each payment becomes due.
+        return text
+    if "合同名称" in normalized_name:
+        text = text.strip("《》〈〉")
     if "准确率" in normalized_name:
         percentage = re.search(r"\d+(?:\.\d+)?%", text)
         if percentage:
@@ -165,7 +242,7 @@ def normalize_field_value(field_name: str, value: object) -> object:
         text = re.sub(r"内$", "", text).strip()
     if "违约金规则" in normalized_name:
         text = text.replace("千分之一", "0.1%")
-        text = re.sub(r"^按", "", text)
+        text = re.sub(r"^(?:违约金)?按", "", text)
         text = text.replace("计算", "").replace("的 10%", " 10%").replace("的10%", " 10%")
         text = re.sub(r"每日\s*(\d)", r"每日 \1", text)
         text = re.sub(r"\s+", " ", text).strip(" ，,。")
@@ -178,7 +255,7 @@ def normalize_field_value(field_name: str, value: object) -> object:
             except ValueError:
                 return text
     if any(token in normalized_name for token in ("永久数据丢失", "是否", "发生")):
-        if text in {"未发生", "没有", "无", "否", "no", "false"}:
+        if text.lower() in {"否", "no", "false"} or text.startswith(("未发生", "没有", "无")):
             return "否"
         if text in {"发生", "有", "是", "yes", "true"}:
             return "是"
@@ -361,7 +438,11 @@ def handle_information_extraction(input_data):
         }
         dynamic_model = create_model("DynamicExtractionModel", **cast(dict[str, Any], fields_spec))
         chunks = chunk_text(full_text)
-        deterministic_fields = _extract_incident_fields(full_text, input_data.target_entities)
+        deterministic_fields = {
+            **_extract_incident_fields(full_text, input_data.target_entities),
+            **_extract_procurement_fields(full_text, input_data.target_entities),
+            **_extract_weekly_report_fields(full_text, input_data.target_entities),
+        }
 
         if all(entity in deterministic_fields for entity in input_data.target_entities):
             chunk_results = [deterministic_fields]
@@ -443,6 +524,49 @@ def _find_unicode_date_for_field(full_text: str, field_name: str) -> tuple[str |
     return None, None
 
 
+def _find_labeled_business_value(full_text: str, field_name: str) -> tuple[object | None, str | None]:
+    """Return high-confidence values for common labelled business fields.
+
+    The fallback is intentionally conservative: monetary conversion is only
+    applied when the document contains one unambiguous RMB amount.
+    """
+
+    normalized_name = "".join(field_name.split())
+    if any(token in normalized_name for token in ("金额", "总额")):
+        money_matches = list(
+            re.finditer(r"(?<![\d.])([\d,]+(?:\.\d+)?)\s*(亿|万)?\s*元", full_text)
+        )
+        if len(money_matches) == 1:
+            match = money_matches[0]
+            try:
+                amount = Decimal(match.group(1).replace(",", ""))
+                multiplier = {"亿": Decimal("100000000"), "万": Decimal("10000")}.get(
+                    match.group(2), Decimal("1")
+                )
+                return f"{amount * multiplier:.2f}", find_evidence_snippet(full_text, match.group(0))
+            except InvalidOperation:
+                pass
+
+    if "质保" in normalized_name:
+        match = re.search(
+            r"质保(?:期|期限)?\s*[：:]\s*(?:自[^。\n]{0,80}?(?:起|之日起)\s*)?(\d+(?:\.\d+)?\s*(?:个?月|年|天))",
+            full_text,
+        )
+        if match:
+            value = normalize_field_value(field_name, match.group(1))
+            return value, find_evidence_snippet(full_text, match.group(0))
+
+    if "联系人" in normalized_name:
+        match = re.search(
+            rf"{re.escape(field_name)}\s*[：:]\s*([^，,。；;\n]+)",
+            full_text,
+        )
+        if match:
+            return match.group(1).strip(), find_evidence_snippet(full_text, match.group(0))
+
+    return None, None
+
+
 def merge_chunk_extractions(
     chunk_results: list[dict[str, object]],
     chunks: list[dict[str, object]],
@@ -508,6 +632,30 @@ def merge_chunk_extractions(
                 ]
         if action_lines:
             merged["改进动作数量"] = len(action_lines)
+
+    for entity in target_entities:
+        fallback_value, fallback_snippet = _find_labeled_business_value(full_text, entity)
+        if fallback_value is None:
+            continue
+        merged[entity] = fallback_value
+        normalized[entity] = fallback_value
+        confidence[entity] = 0.95
+        evidence[entity] = {
+            "chunk_id": "rule_fallback",
+            "char_range": None,
+            "snippet": fallback_snippet,
+            "strategy": "label_regex_override",
+        }
+        candidates.setdefault(entity, [])
+        if fallback_value not in candidates[entity]:
+            candidates[entity].append(fallback_value)
+        validation[entity] = validate_field_value(
+            entity,
+            fallback_value,
+            fallback_value,
+            confidence[entity],
+            {},
+        )
 
     found_count = sum(1 for entity in target_entities if not _is_unicode_missing_value(merged.get(entity)))
     meta["found_field_count"] = found_count

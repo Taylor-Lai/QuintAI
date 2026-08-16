@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+from copy import deepcopy
 from datetime import datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -87,6 +88,7 @@ PARAGRAPH_INDEX_WORDS = {
     "十": 9,
 }
 COLOR_MAP = {
+    "深蓝": "#1F4D78",
     "红": "#FF0000",
     "红色": "#FF0000",
     "蓝": "#0000FF",
@@ -99,8 +101,39 @@ COLOR_MAP = {
 
 
 def _split_command(command: str) -> list[str]:
-    parts = re.split(r"[，,；;。\n]+|然后|并且|同时|最后|接着|随后|再", command)
-    return [part.strip() for part in parts if part.strip()]
+    parts: list[str] = []
+    current: list[str] = []
+    quote_end: str | None = None
+    quote_pairs = {"“": "”", '"': '"', "'": "'"}
+    connectors = ("然后", "并且", "同时", "最后", "接着", "随后", "再")
+    index = 0
+    while index < len(command):
+        character = command[index]
+        if quote_end is not None:
+            current.append(character)
+            if character == quote_end:
+                quote_end = None
+            index += 1
+            continue
+        if character in quote_pairs:
+            quote_end = quote_pairs[character]
+            current.append(character)
+            index += 1
+            continue
+        connector = next((item for item in connectors if command.startswith(item, index)), None)
+        if character in "，,；;。\n" or connector:
+            part = "".join(current).strip()
+            if part:
+                parts.append(part)
+            current = []
+            index += len(connector) if connector else 1
+            continue
+        current.append(character)
+        index += 1
+    part = "".join(current).strip()
+    if part:
+        parts.append(part)
+    return parts
 
 
 def _infer_target_paragraph_index(text: str) -> int | None:
@@ -260,7 +293,12 @@ def build_rule_based_plan(command: str) -> FormatPlan:
                 color_hex=color_hex,
                 alignment=alignment,
             )
-            if actions and actions[-1].operation == "format" and actions[-1].target_paragraph_index == target_index:
+            if (
+                actions
+                and actions[-1].operation == "format"
+                and actions[-1].target_paragraph_index == target_index
+                and actions[-1].target_text == new_action.target_text
+            ):
                 previous = actions[-1]
                 previous.bold = new_action.bold if new_action.bold is not None else previous.bold
                 previous.font_size = new_action.font_size if new_action.font_size is not None else previous.font_size
@@ -555,24 +593,54 @@ def _apply_format_action(doc: Document, action: FormatAction) -> int:
         text = paragraph.text
         start = text.find(action.target_text)
         if start >= 0:
-            prefix = text[:start]
-            suffix = text[start + len(action.target_text) :]
+            target_end = start + len(action.target_text)
+            segments: list[tuple[str, object | None, bool]] = []
+            offset = 0
+            for original_run in paragraph.runs:
+                run_text = original_run.text
+                run_start = offset
+                run_end = offset + len(run_text)
+                offset = run_end
+                boundaries = {run_start, run_end}
+                if run_start < start < run_end:
+                    boundaries.add(start)
+                if run_start < target_end < run_end:
+                    boundaries.add(target_end)
+                ordered_boundaries = sorted(boundaries)
+                for left, right in zip(ordered_boundaries, ordered_boundaries[1:]):
+                    if left >= right:
+                        continue
+                    relative_left = left - run_start
+                    relative_right = right - run_start
+                    segment_text = run_text[relative_left:relative_right]
+                    if segment_text:
+                        segments.append(
+                            (
+                                segment_text,
+                                deepcopy(original_run._r.rPr) if original_run._r.rPr is not None else None,
+                                left < target_end and right > start,
+                            )
+                        )
             paragraph.clear()
-            if prefix:
-                paragraph.add_run(prefix)
-            target_run = paragraph.add_run(action.target_text)
-            if action.bold is not None:
-                target_run.bold = action.bold
-            if action.font_size is not None:
-                target_run.font.size = Pt(action.font_size)
-            if action.color_hex:
-                hex_color = action.color_hex.lstrip("#")
-                if len(hex_color) == 6:
-                    target_run.font.color.rgb = RGBColor(
-                        int(hex_color[:2], 16), int(hex_color[2:4], 16), int(hex_color[4:], 16)
-                    )
-            if suffix:
-                paragraph.add_run(suffix)
+            for segment_text, run_properties, is_target in segments:
+                new_run = paragraph.add_run(segment_text)
+                if run_properties is not None:
+                    existing_properties = new_run._r.rPr
+                    if existing_properties is not None:
+                        new_run._r.remove(existing_properties)
+                    new_run._r.insert(0, deepcopy(run_properties))
+                if not is_target:
+                    continue
+                if action.bold is not None:
+                    new_run.bold = action.bold
+                if action.font_size is not None:
+                    new_run.font.size = Pt(action.font_size)
+                if action.color_hex:
+                    hex_color = action.color_hex.lstrip("#")
+                    if len(hex_color) == 6:
+                        new_run.font.color.rgb = RGBColor(
+                            int(hex_color[:2], 16), int(hex_color[2:4], 16), int(hex_color[4:], 16)
+                        )
             return 1
 
     for paragraph in paragraphs:

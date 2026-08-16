@@ -13,7 +13,7 @@ from collections import OrderedDict
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 
-from docnexus.ai.table_engine.core.models import EvidencePack, StructuredRecord
+from docnexus.ai.table_engine.core.models import EvidencePack, StructuredRecord, TaskSpec
 
 _PARENS_RE = re.compile(r"[（(][^）)]*[）)]")
 _NON_WORD_RE = re.compile(r"[\s_\-—－:/：、，,。]+")
@@ -399,10 +399,43 @@ def _build_exception_records(target_table, source_docs) -> list[StructuredRecord
     return records
 
 
-def build_template_anchored_records(template_doc, source_docs, template_spec, evidence_pack: EvidencePack) -> list[StructuredRecord]:
+def _task_request_text(task_spec: TaskSpec | None) -> str:
+    if task_spec is None:
+        return ""
+    return "\n".join(
+        str(constraint.value)
+        for constraint in task_spec.constraints
+        if constraint.kind == "request_text" and constraint.value
+    )
+
+
+def _excluded_identity_sentences(source_docs, request_text: str) -> list[str]:
+    if "排除" not in request_text:
+        return []
+    terms = [term for term in ("取消资格", "废弃", "无效", "淘汰") if term in request_text]
+    if not terms:
+        return []
+    return [
+        sentence.strip()
+        for source_doc in source_docs
+        for block in source_doc.blocks
+        for sentence in re.split(r"[。；;\n]", block.text or "")
+        if sentence.strip() and any(term in sentence for term in terms)
+    ]
+
+
+def build_template_anchored_records(
+    template_doc,
+    source_docs,
+    template_spec,
+    evidence_pack: EvidencePack,
+    task_spec: TaskSpec | None = None,
+) -> list[StructuredRecord]:
     """Build and merge relational records without asking an LLM to infer joins."""
 
     output: list[StructuredRecord] = []
+    request_text = _task_request_text(task_spec)
+    excluded_sentences = _excluded_identity_sentences(source_docs, request_text)
     for table_index, target_table in enumerate(template_spec.target_tables):
         target_fields = [field.field_name for field in target_table.schema]
         exception_records = _build_exception_records(target_table, source_docs)
@@ -423,6 +456,13 @@ def build_template_anchored_records(template_doc, source_docs, template_spec, ev
             for source_table in source_doc.tables:
                 for source_row in source_table.rows[1:]:
                     raw_row = _row_dict(source_table, source_row)
+                    if "排除" in request_text and any(
+                        term in str(value)
+                        for value in raw_row.values()
+                        for term in ("取消资格", "废弃", "无效", "淘汰")
+                        if term in request_text
+                    ):
+                        continue
                     voucher = next((str(value) for key, value in raw_row.items() if "凭证" in key and value not in (None, "")), "")
                     if voucher:
                         voucher_key = (source_table.table_id, voucher)
@@ -502,6 +542,15 @@ def build_template_anchored_records(template_doc, source_docs, template_spec, ev
                     acc.notes.append(f"Merged canonical row from {source_doc.file.name}/{source_table.name}.")
 
         _apply_text_overrides(accumulators, target_fields, identities, source_docs)
+        if excluded_sentences:
+            accumulators = OrderedDict(
+                (identity, accumulator)
+                for identity, accumulator in accumulators.items()
+                if not any(
+                    all(value and _identity_value_in_text(value, sentence) for value in identity)
+                    for sentence in excluded_sentences
+                )
+            )
 
         for signup_record in _paragraph_signup_records(source_docs, target_table):
             identity = _key(signup_record.values, identities)

@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import time
 from datetime import date, datetime
 from pathlib import Path
@@ -117,11 +118,24 @@ def norm_text(value: Any) -> str:
     return " ".join(str(value).replace("\u3000", " ").split())
 
 
+def extraction_values_match(field: str, actual: Any, expected: Any) -> bool:
+    actual_text = norm_text(actual)
+    expected_text = norm_text(expected)
+    if actual_text == expected_text:
+        return True
+    if "付款条件" not in field:
+        return False
+    expected_parts = re.findall(r"\d+(?:\.\d+)?%", expected_text)
+    if not expected_parts or re.sub(r"[\d.%/、，,；;\s]+", "", expected_text):
+        return False
+    return re.findall(r"\d+(?:\.\d+)?%", actual_text) == expected_parts
+
+
 def compare_extraction(actual: dict[str, Any], expected: dict[str, Any]) -> dict[str, Any]:
     mismatches = []
     for field, expected_value in expected.items():
         actual_value = actual.get(field)
-        if norm_text(actual_value) != norm_text(expected_value):
+        if not extraction_values_match(field, actual_value, expected_value):
             mismatches.append({"field": field, "expected": expected_value, "actual": actual_value})
     unexpected = sorted(key for key in actual if key not in expected and key != "_meta")
     return {

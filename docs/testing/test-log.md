@@ -1,19 +1,39 @@
 # 持续测试日志
 
-本文件按时间记录测试事实。状态只使用“通过”“不通过”“受阻”；代码修改说明和技术债记录在[维护记录](../development/maintenance-log.md)，当前发布判断见[发布就绪检查](../release-readiness.md)。
+本文件按时间记录测试事实。状态只使用“通过”“不通过”“受阻”；代码修改说明和技术债记录在[维护记录](../development/maintenance-log.md)，当前版本状态见[版本验证状态](../release-readiness.md)。
 
 ## 当前有效基线
 
 | 范围 | 最近有效结果 | 状态 |
 | --- | --- | --- |
-| Python 非真实模型回归 | 195 passed、8 deselected；覆盖率 71.08% | 通过 |
+| Python 非真实模型回归 | 207 passed、8 deselected；Ruff、Mypy、compileall 通过 | 通过 |
 | 表格引擎确定性评估 | 3/3 | 通过 |
-| Web lint / unit / build / audit / E2E | 0 errors；9/9；通过；0 vulnerabilities；4/4 | 通过 |
-| 15 套真实材料 Web 验收 | 最近完整基线 15/15；本轮定向复验：信息提取 1/5、表格填充 5/5 | 受阻 |
-| Android 本轮回归 | 未执行，缺少 Java / `JAVA_HOME` | 受阻 |
+| Web lint / unit / build / E2E | 0 errors；12/12；通过；4/4 | 通过 |
+| 真实材料 API 验收 | 既有材料 15/15；新增客户场景 6/6 | 通过 |
+| Android 回归 | 3 项单元测试、Lint、Debug 构建通过 | 通过 |
 | DOCX 页面级渲染 | 未执行，缺少 LibreOffice/soffice；结构与格式快照已通过 | 受阻 |
 
-当前容器配置模型为 `qwen3.7-max-preview`。本轮真实 Web 定向复验结果见 `WT-20260802-01`；确定性代码回归不能替代被 Docker 外部 TLS 阻断的模型调用。
+当前版本的最近一次检查见 `WT-20260814-01`。
+
+## WT-20260814-01：最终客户级验收
+
+- 本地生产栈使用 Docker Compose 重建，Nginx、API、Worker、Scheduler、PostgreSQL、Redis 均通过健康检查；
+- 后端：Ruff、Mypy、compileall 通过，207 项非真实模型测试通过，8 项真实 API 测试按标记跳过；
+- Web：lint 0 warnings/0 errors，12/12 单元测试，生产构建通过，生产依赖审计为 0 vulnerabilities；
+- 新增客户级材料：文档编辑、信息提取、表格填充各 2 套，任务与下载结果严格比较 6/6；
+- 既有真实材料：15 项任务全部成功；修复结果规范化差异后，相关提取材料重新执行并精确匹配，三类材料合计 15/15；
+- 表格引擎确定性评估 3/3，覆盖关联计算、去重排序和累计窗口；
+- 结论：本地源码、生产镜像和三项核心业务流程均达到本次交付要求。公网部署、实体 Android 设备和生产密钥仍应在目标环境独立验收。
+
+## WT-20260812-01：完整项目检查
+
+- 检查范围：Web、Android、后端、异步任务、部署配置、测试与文档；不包含 APK、部署 ZIP、密钥和运行产物；
+- Python：Ruff 通过，Mypy 49 个源码文件通过，204 项非真实模型测试通过；
+- Web：lint 0 warnings/0 errors，12/12 单元测试，生产构建通过，桌面与移动 Playwright 4/4；
+- Android：Android Studio JBR 21，3 项单元测试、Lint、Debug APK 构建通过；为规避 Gradle 在中文路径下的测试类加载缺陷，使用临时 ASCII 盘符执行，结束后已解除映射；
+- 本地生产栈：Nginx、API、Worker、Scheduler、PostgreSQL、Redis 均健康；
+- 真实用户代表流程：注册、登录与页面导航通过；信息提取、Word 编辑、表格填充各执行 1 套现有夹具，任务成功且严格比较 3/3；
+- 结论：本地自动化检查与三类代表性业务流程通过；该结果不等同于全量 15 套材料复验、实体设备商店发布或目标生产环境上线验收。
 
 ## WT-20260808-01：候选产物重新构建
 
@@ -21,7 +41,7 @@
 - Web：lint 0 warnings/0 errors，9/9 单元测试，生产构建通过，Playwright 4/4，`npm audit` 为 0 vulnerabilities；
 - Android：使用 Android Studio JBR 21，从临时 ASCII 盘符执行 3 项单元测试、Lint 和 Debug APK 构建，全部通过；
 - 依赖安全：升级锁文件中的 `nanoid` 与 `postcss` 补丁版本，消除 1 项高危和 1 项中危公告；
-- 结论：本地确定性代码门禁与 Android Debug 构建通过；真实模型材料、实体设备和目标生产环境验收仍需独立执行。
+- 结论：本地确定性代码检查与 Android Debug 构建通过；真实模型材料、实体设备和目标生产环境验收仍需独立执行。
 
 ## WT-20260803-01：生产网关认证路由修复
 
@@ -31,7 +51,7 @@
 - Python：195 passed、8 deselected，覆盖率 71.08%；Ruff、Mypy、compileall 通过；表格引擎确定性评估 3/3；
 - Web：lint 0 warnings/0 errors；9/9 单元测试；生产构建通过；生产产物 Playwright 4/4；`npm audit` 为 0 vulnerabilities；
 - Android：当前机器仍缺少 Java / `JAVA_HOME`，单元测试、Lint 与构建受阻；
-- 结论：生产 API 路由缺陷已修复并由生产构建浏览器门禁覆盖；真实模型材料验收、目标服务器 HTTPS、备份恢复与告警仍未完成。
+- 结论：生产 API 路由缺陷已修复并由生产构建浏览器测试覆盖；真实模型材料验收、目标服务器 HTTPS、备份恢复与告警仍未完成。
 
 ## WT-20260803-02：公网 IP/HTTP 临时会话模式
 
@@ -82,7 +102,7 @@
 - 当时标准回归：后端 186 passed、8 deselected；Web lint、5 项单元测试和生产构建通过；
 - 环境边界：Android 与 DOCX 页面级渲染受阻；
 - 证据：见[最终验收摘要](final-acceptance-summary.md)和[测试材料问题](fixture-issues.md)；
-- 结论：Web 核心业务和当时可执行的标准回归通过；不代表 Android 或生产部署门禁通过。
+- 结论：Web 核心业务和当时可执行的标准回归通过；不代表 Android 或生产部署验证通过。
 
 ## WT-20260801-05：冗余与命名重构回归
 
@@ -101,7 +121,7 @@
 - 信息提取：故障复盘 13 个显式字段改为确定性时间线提取；完整命中时不调用模型，结果与 `期望结果.json` 精确一致；
 - 表格填充：报名名单增加模板锚定的中文行内多记录解析；报名名单和项目台账均通过完整 Agent、计算、Writer 流水线的逐单元格、公式和格式精确比较；
 - 定向回归：信息提取和业务完整性 35 tests passed；
-- 项目门禁：Ruff、Mypy、compileall 通过；195 passed、8 deselected；覆盖率 71.08%；表格评估 3/3；Web lint、9 项单元测试、生产构建、0 vulnerabilities、Playwright 4/4 均通过；
+- 项目检查：Ruff、Mypy、compileall 通过；195 passed、8 deselected；覆盖率 71.08%；表格评估 3/3；Web lint、9 项单元测试、生产构建、0 vulnerabilities、Playwright 4/4 均通过；
 - 真实 Web 表格复验：通过网关登录、上传、异步 Worker、下载及严格工作簿比较，5/5 任务成功、5/5 比较通过；报名名单和项目台账均为 0 个单元格、公式或格式差异。原始明细保存在未提交的 `reports/test-runs/20260802-web-tables-recheck-manual/results.json`；
 - 真实 Web 信息提取复验：故障复盘成功，13/13 字段精确匹配；其余 4 项均在调用 `qwen3.7-max-preview` 的外部 TLS 建连阶段失败。Worker 直连与通过宿主机代理均复现 `SSL: UNEXPECTED_EOF_WHILE_READING`，而宿主机绕过 Docker 直连同一 DashScope 端点得到 HTTP 401，证明端点可达且故障位于当前 Docker 出网链路，不是字段比较失败。原始明细保存在未提交的 `reports/test-runs/20260802-web-extraction-recheck-manual/results.json`；
 - 运行器修复：本地 `BASE_URL` 明确忽略宿主机代理，避免访问 `127.0.0.1` 被错误代理成 502；Compose 增加独立的可选容器代理配置，不复用宿主机回环地址；

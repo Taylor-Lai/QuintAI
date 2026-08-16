@@ -89,6 +89,21 @@
                 <span>{{ getLoadingStageLabel() }}</span>
                 <span>{{ progress }}%</span>
               </div>
+
+              <div class="progress-steps" aria-label="处理步骤">
+                <div
+                  v-for="(step, index) in loadingSteps"
+                  :key="step"
+                  class="progress-step"
+                  :class="{
+                    completed: index < completedSteps,
+                    active: index === currentLoadingStepIndex
+                  }"
+                >
+                  <span class="progress-step-index">{{ index < completedSteps ? '✓' : index + 1 }}</span>
+                  <span>{{ step }}</span>
+                </div>
+              </div>
             </div>
 
             <div v-else-if="resultData" class="note-content">
@@ -507,6 +522,21 @@
               <span>{{ getLoadingStageLabel() }}</span>
               <span>{{ progress }}%</span>
             </div>
+
+            <div class="progress-steps" aria-label="处理步骤">
+              <div
+                v-for="(step, index) in loadingSteps"
+                :key="step"
+                class="progress-step"
+                :class="{
+                  completed: index < completedSteps,
+                  active: index === currentLoadingStepIndex
+                }"
+              >
+                <span class="progress-step-index">{{ index < completedSteps ? '✓' : index + 1 }}</span>
+                <span>{{ step }}</span>
+              </div>
+            </div>
           </div>
 
           <div v-else-if="resultData" class="result-content">
@@ -582,7 +612,7 @@
                       </div>
                     </div>
 
-                    <div class="extract-status-badge soft-badge">
+                    <div v-if="getExtractStatusText()" class="extract-status-badge soft-badge">
                       {{ getExtractStatusText() }}
                     </div>
                   </div>
@@ -738,6 +768,21 @@ const progress = ref(0)
 const progressText = ref('正在准备任务...')
 const completedSteps = ref(0)
 const totalSteps = ref(1)
+
+const loadingSteps = computed(() => {
+  if (props.type === 'doc-chat') {
+    return ['读取文档', '执行编辑', '保存结果', '完成交付']
+  }
+  if (props.type === 'doc-extract') {
+    return ['读取文档', '提取字段', '生成证据', '质量检查', '完成交付']
+  }
+  return ['任务规划', '解析模板', '选择路径', '检索材料', '组织证据', '生成数据', '校验结果', '检查并交付']
+})
+
+const currentLoadingStepIndex = computed(() => {
+  if (!loadingSteps.value.length || completedSteps.value >= loadingSteps.value.length) return -1
+  return Math.max(0, completedSteps.value)
+})
 
 const activeTemplateFieldLabels = computed(() => {
   const template = activeTemplateMeta.value
@@ -1010,7 +1055,8 @@ const getLoadingTitle = () => {
 }
 
 const getLoadingStageLabel = () => {
-  return `真实节点 ${completedSteps.value} / ${totalSteps.value}`
+  const currentStep = Math.min(completedSteps.value + 1, totalSteps.value)
+  return `处理步骤 ${currentStep} / ${totalSteps.value}`
 }
 
 const loadActiveTemplate = () => {
@@ -1225,8 +1271,7 @@ const isFileResult = () => {
 const normalizeStatusText = (status) => {
   if (!status) return ''
   const text = String(status).toLowerCase()
-  if (text === 'success') return '已完成'
-  if (text === 'ok') return '已完成'
+  if (['success', 'succeeded', 'completed', 'ok'].includes(text)) return '已完成'
   if (text === 'failed') return '失败'
   if (text === 'error') return '失败'
   return String(status)
@@ -2256,6 +2301,60 @@ const handleDownload = () => {
   font-size: 13px;
 }
 
+.progress-steps {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.progress-step {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 10px;
+  border: 1px solid #eee4d5;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.72);
+  color: #9a8d79;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.progress-step-index {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: #f2eadf;
+  color: #9a8d79;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.progress-step.completed {
+  border-color: #ead6b3;
+  color: #7c6540;
+  background: #fff8eb;
+}
+
+.progress-step.completed .progress-step-index,
+.progress-step.active .progress-step-index {
+  background: #d5b076;
+  color: #fff;
+}
+
+.progress-step.active {
+  border-color: #d5b076;
+  color: #493b28;
+  background: #fffaf1;
+  box-shadow: 0 4px 12px rgba(213, 176, 118, 0.14);
+}
+
 /* file result */
 .pretty-result-card {
   display: flex;
@@ -2463,7 +2562,7 @@ const handleDownload = () => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 88px;
+  min-width: 0;
   height: 34px;
   padding: 0 16px;
   border-radius: 999px;
@@ -2475,8 +2574,10 @@ const handleDownload = () => {
 }
 
 .soft-badge {
-  background: linear-gradient(180deg, #d9b57b 0%, #caa262 100%);
-  box-shadow: 0 10px 18px rgba(213, 176, 118, 0.16);
+  background: rgba(213, 176, 118, 0.16);
+  color: #9a6b2f;
+  border: 1px solid rgba(213, 176, 118, 0.28);
+  box-shadow: none;
 }
 
 .extract-grid {

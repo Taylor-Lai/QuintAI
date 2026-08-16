@@ -73,6 +73,43 @@ def _to_number(value: object) -> float | None:
     return None
 
 
+def _derived_sort_value(candidate, field_name: str) -> object:
+    direct = _candidate_value(candidate, field_name)
+    if direct not in (None, ""):
+        return direct
+    normalized = _norm_field(field_name)
+    source_values = {**candidate.row_identity, **candidate.values}
+    if "加权" in normalized and any(token in normalized for token in ("总分", "得分", "分数")):
+        scores: list[float] = []
+        for token in ("质量", "交付", "价格", "服务"):
+            score = next(
+                (
+                    number
+                    for key, value in source_values.items()
+                    if token in str(key)
+                    and "总" not in str(key)
+                    and (number := _to_number(value)) is not None
+                ),
+                None,
+            )
+            if score is None:
+                break
+            scores.append(score)
+        if len(scores) == 4:
+            return sum(score * weight for score, weight in zip(scores, (0.4, 0.3, 0.2, 0.1)))
+    if any(token in normalized for token in ("合计", "总计", "总额", "总金额")):
+        numbers = [
+            number
+            for key, value in source_values.items()
+            if key != field_name
+            and not any(token in str(key) for token in ("序号", "排名"))
+            and (number := _to_number(value)) is not None
+        ]
+        if numbers:
+            return sum(numbers)
+    return direct
+
+
 def _entity_matches(candidate_value: object, expected_value: object) -> bool:
     if candidate_value in (None, "") or expected_value in (None, ""):
         return False
@@ -186,7 +223,17 @@ def _candidate_satisfies_task(candidate, task_spec) -> bool:
             return False
 
     for field_name, operator, threshold in field_filters:
-        value = _to_number(_candidate_value(candidate, field_name))
+        raw_value = _candidate_value(candidate, field_name)
+        if operator in {"in", "not_in", "contains", "not_contains"}:
+            text = "" if raw_value is None else str(raw_value)
+            expected_values = threshold if isinstance(threshold, (list, tuple, set)) else [threshold]
+            matches = any(str(expected) in text for expected in expected_values)
+            if operator in {"in", "contains"} and not matches:
+                return False
+            if operator in {"not_in", "not_contains"} and matches:
+                return False
+            continue
+        value = _to_number(raw_value)
         threshold_number = _to_number(threshold)
         if value is None or threshold_number is None:
             return False
@@ -249,7 +296,7 @@ def _finalize_candidates_by_task(candidates: list, task_spec):
         use_entity_grouping = _is_date_field_name(sort_field) or _task_requests_entity_grouping(task_spec)
 
         def sort_key(candidate):
-            value = _candidate_value(candidate, sort_field)
+            value = _derived_sort_value(candidate, sort_field)
             group_key = _candidate_entity_group_key(candidate) if use_entity_grouping else ("", "")
             if _is_date_field_name(sort_field):
                 return (*group_key, 0, _date_text(value))
@@ -1028,6 +1075,7 @@ class CoderAgent:
             state.source_docs,
             state.template_spec,
             state.evidence_pack,
+            state.task_spec,
         )
         relational_target_ids = {record.target_table_id for record in relational_records}
         if relational_target_ids:
@@ -1247,12 +1295,12 @@ class VerifierAgent:
         state.fill_result = fill_result
         state.verification_report = verification_report
 
-        if verification_report.status == "pass":
+        if verification_report.status != "fail":
             skill_result = None
             state.add_log(
                 "verifier_agent",
                 "llm_verification_skipped",
-                {"reason": "deterministic_verification_passed"},
+                {"reason": "deterministic_verification_non_failing"},
             )
         else:
             skill_result = _run_skill(

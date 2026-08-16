@@ -40,6 +40,9 @@
 |-- requirements/            # Python 运行与开发依赖
 |-- scripts/                 # 质量检查、备份恢复与辅助脚本
 |-- tests/manual/            # 人工端到端验收材料
+|-- tests/customer-acceptance/ # 补充客户级自动验收材料
+|-- tests/customer-acceptance/ # 补充客户级自动验收材料
+|-- tests/customer-acceptance/ # 补充客户级自动验收材料
 |-- compose.yaml             # 本地及单机部署编排
 |-- environment.yml          # Conda 环境定义
 `-- pyproject.toml           # 仓库级 Python 工具配置

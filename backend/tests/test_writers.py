@@ -21,6 +21,33 @@ from openpyxl import Workbook, load_workbook  # noqa: E402
 
 
 class XlsxWriterTests(unittest.TestCase):
+    def test_template_number_format_is_preserved(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            template_path = Path(tmp) / "template.xlsx"
+            workbook = Workbook()
+            sheet = workbook.active
+            sheet.append(["区域", "完成率"])
+            sheet["B2"].number_format = "0.00%"
+            workbook.save(template_path)
+            template_doc = CanonicalDocument(
+                doc_id="template",
+                file=FileAsset("template", str(template_path), "template.xlsx", "xlsx", "template", None, template_path.stat().st_size),
+                doc_type="xlsx",
+            )
+            template_spec = TemplateSpec(
+                template_doc_id="template",
+                target_tables=[TargetTableSpec("table-1", "region", schema=[
+                    FieldSpec("region", "区域", "区域", "string", True),
+                    FieldSpec("rate", "完成率", "完成率", "number", True),
+                ])],
+            )
+            result = XlsxWriter().write(
+                template_doc,
+                template_spec,
+                [StructuredRecord("r1", "table-1", values={"区域": "华东", "完成率": 0.875})],
+            )
+            self.assertEqual(load_workbook(result.output_path).active["B2"].number_format, "0.00%")
+
     def test_formula_cells_inherit_source_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             template_path = Path(tmp) / "template.xlsx"

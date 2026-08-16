@@ -213,6 +213,8 @@ def _derived_formula(
 
 
 def _apply_number_format(cell, field_name: str) -> None:
+    if cell.number_format not in (None, "", "General"):
+        return
     if any(token in field_name for token in ("手机号", "电话")):
         cell.number_format = "@"
     elif "率" in field_name or "比例" in field_name:

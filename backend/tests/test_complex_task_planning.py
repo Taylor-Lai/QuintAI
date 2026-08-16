@@ -120,6 +120,35 @@ def _country_template_without_date() -> TemplateSpec:
 
 
 class ComplexTaskPlanningTests(unittest.TestCase):
+    def test_planner_filters_named_suppliers_and_sorts_derived_weighted_score(self) -> None:
+        fields = [
+            FieldSpec("supplier", "供应商", "供应商", "string", True),
+            FieldSpec("quality", "质量评分", "质量评分", "number", True),
+            FieldSpec("delivery", "交付评分", "交付评分", "number", True),
+            FieldSpec("price", "价格评分", "价格评分", "number", True),
+            FieldSpec("service", "服务评分", "服务评分", "number", True),
+            FieldSpec("weighted", "加权总分", "加权总分", "number", True),
+        ]
+        template_spec = TemplateSpec(
+            template_doc_id="template",
+            target_tables=[TargetTableSpec("suppliers", "供应商评分", schema=fields)],
+        )
+        request = "只保留启明科技、星桥软件和云帆数据，按加权总分从高到低排列。"
+        task_spec = DefaultTaskPlanner().plan(_request_doc(request), template_spec, [])
+        inclusion = next(c for c in task_spec.constraints if c.kind == "field_filter" and c.operator == "in")
+        ordering = next(c for c in task_spec.constraints if c.kind == "sort")
+        self.assertEqual(inclusion.field, "供应商")
+        self.assertEqual(inclusion.value, ["启明科技", "星桥软件", "云帆数据"])
+        self.assertEqual((ordering.field, ordering.operator), ("加权总分", "desc"))
+
+        candidates = [
+            CandidateRecord("c1", "suppliers", {"供应商": "启明科技", "质量评分": 80, "交付评分": 80, "价格评分": 80, "服务评分": 80, "加权总分": None}, {"供应商": "启明科技"}),
+            CandidateRecord("c2", "suppliers", {"供应商": "星桥软件", "质量评分": 95, "交付评分": 90, "价格评分": 85, "服务评分": 80, "加权总分": None}, {"供应商": "星桥软件"}),
+            CandidateRecord("c3", "suppliers", {"供应商": "未入围公司", "质量评分": 100, "交付评分": 100, "价格评分": 100, "服务评分": 100, "加权总分": None}, {"供应商": "未入围公司"}),
+        ]
+        finalized = _finalize_candidates_by_task(candidates, task_spec)
+        self.assertEqual([item.values["供应商"] for item in finalized], ["星桥软件", "启明科技"])
+
     def test_planner_extracts_complex_request_constraints(self) -> None:
         request = (
             "\u8bf7\u7b5b\u9009\u5317\u4eac\u5e022026\u5e746\u67081\u65e5"

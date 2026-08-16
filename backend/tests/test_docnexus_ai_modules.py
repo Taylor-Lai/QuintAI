@@ -15,6 +15,7 @@ from docnexus.ai.document_operations import (
     DocumentAction,
     DocumentOperationPlan,
     FormatAction,
+    _apply_format_action,
     _apply_insert_action,
     _apply_replace_action,
     _apply_structure_action,
@@ -26,12 +27,15 @@ from docnexus.ai.document_operations import (
 )
 from docnexus.ai.information_extraction import (
     _extract_incident_fields,
+    _extract_procurement_fields,
+    _extract_weekly_report_fields,
     _invoke_extraction_chunks,
     handle_information_extraction,
     merge_chunk_extractions,
     normalize_field_value,
 )
 from docx import Document
+from docx.shared import Pt
 
 
 class InformationExtractionConcurrencyTests(unittest.TestCase):
@@ -138,10 +142,16 @@ class DocumentOperationModelTests(unittest.TestCase):
         self.assertEqual(normalize_field_value("单批交付周期", "7 个工作日内"), "7 个工作日")
         self.assertEqual(
             normalize_field_value("付款条件", "合同生效后 30%，验收后 60%，质保后 10%。"),
-            "30%/60%/10%",
+            "合同生效后 30%，验收后 60%，质保后 10%。",
         )
+        self.assertEqual(normalize_field_value("是否发生永久数据丢失", "未发生永久数据丢失"), "否")
         self.assertEqual(normalize_field_value("准确率要求", "不得低于 98.5%"), "98.5%")
         self.assertEqual(normalize_field_value("本周完成接口数", "24 个"), 24)
+        self.assertEqual(normalize_field_value("合同名称", "《数据标注服务合同》"), "数据标注服务合同")
+        self.assertEqual(
+            normalize_field_value("违约金规则", "违约金按逾期部分金额每日千分之一计算，上限为合同总额的 10%"),
+            "逾期部分金额每日 0.1%，上限为合同总额 10%",
+        )
         self.assertEqual(
             normalize_field_value("最终根因", "任务消费者发布时环境变量名称拼写错误，导致新实例未订阅 production 队列"),
             "新实例因环境变量名称拼写错误未订阅 production 队列",
@@ -185,6 +195,39 @@ class DocumentOperationModelTests(unittest.TestCase):
         self.assertEqual(plan.actions[0].target_paragraph_index, 0)
         self.assertTrue(plan.actions[0].bold)
         self.assertEqual(plan.actions[0].alignment, "center")
+
+    def test_rule_plan_keeps_quoted_commas_and_separate_targets(self) -> None:
+        plan = build_rule_based_plan(
+            "将首次出现的“第一阶段，需求澄清”设为深蓝色，再将首次出现的“第二阶段，方案评审”加粗"
+        )
+
+        actions = [action for action in plan.actions if action.operation == "format"]
+        self.assertEqual(len(actions), 2)
+        self.assertEqual(actions[0].target_text, "第一阶段，需求澄清")
+        self.assertEqual(actions[0].color_hex, "#1F4D78")
+        self.assertEqual(actions[1].target_text, "第二阶段，方案评审")
+        self.assertTrue(actions[1].bold)
+
+    def test_targeted_format_preserves_existing_run_properties(self) -> None:
+        doc = Document()
+        paragraph = doc.add_paragraph()
+        original = paragraph.add_run("前缀 关键内容 后缀")
+        original.font.name = "Arial"
+        original.font.size = Pt(13)
+        original.italic = True
+
+        changed = _apply_format_action(
+            doc,
+            FormatAction(operation="format", target_text="关键内容", bold=True),
+        )
+
+        self.assertEqual(changed, 1)
+        self.assertEqual(paragraph.text, "前缀 关键内容 后缀")
+        target = next(run for run in paragraph.runs if run.text == "关键内容")
+        self.assertTrue(target.bold)
+        self.assertTrue(target.italic)
+        self.assertEqual(target.font.name, "Arial")
+        self.assertEqual(target.font.size.pt, 13)
 
     def test_rule_plan_recognizes_first_paragraph_alias(self) -> None:
         plan = build_rule_based_plan("首段设为红色")
@@ -357,6 +400,26 @@ class InformationExtractionMetadataTests(unittest.TestCase):
         )
         self.assertEqual({field: actual[field] for field in fields}, expected)
 
+    def test_procurement_fixture_is_fully_extracted_without_model_variance(self) -> None:
+        case_dir = Path(__file__).resolve().parents[2] / "tests" / "manual" / "01-信息提取" / "02-进阶-采购申请"
+        text = (case_dir / "源材料.txt").read_text(encoding="utf-8")
+        fields = (case_dir / "提取字段.txt").read_text(encoding="utf-8").strip().split(",")
+        actual = _extract_procurement_fields(text, fields)
+
+        self.assertEqual(set(actual), set(fields))
+        self.assertEqual(actual["采购内容"], "GPU 云算力服务")
+        self.assertEqual(actual["服务期限"], "12 个月")
+        self.assertEqual(actual["含税总额"], "286800.00")
+
+    def test_weekly_report_fixture_is_fully_extracted_without_model_variance(self) -> None:
+        case_dir = Path(__file__).resolve().parents[2] / "tests" / "manual" / "01-信息提取" / "04-挑战-多版本项目周报"
+        text = (case_dir / "源材料.md").read_text(encoding="utf-8")
+        fields = (case_dir / "提取字段.txt").read_text(encoding="utf-8").strip().split(",")
+        expected = json.loads((case_dir / "期望结果.json").read_text(encoding="utf-8"))
+        actual = _extract_weekly_report_fields(text, fields)
+
+        self.assertEqual(actual, expected)
+
     def test_merge_outputs_normalized_values_and_confidence(self) -> None:
         chunks = [{"chunk_id": 0, "start": 0, "end": 30, "text": "项目日期为2026年5月26日，预算100万元。"}]
         result = merge_chunk_extractions(
@@ -372,6 +435,25 @@ class InformationExtractionMetadataTests(unittest.TestCase):
         self.assertEqual(result["_meta"]["validation"]["项目日期"]["status"], "pass")
         self.assertEqual(result["_meta"]["validation"]["预算"]["expected_type"], "number")
         self.assertEqual(result["_meta"]["candidates"]["预算"], ["100万元"])
+
+    def test_labeled_business_fields_override_ambiguous_model_shapes(self) -> None:
+        full_text = (
+            "批准后的含税总金额为人民币 356.8 万元。\n"
+            "质保期：自最终验收通过之日起 24 个月。\n"
+            "甲方联系人：沈清河，电话 0512-66881234。"
+        )
+        chunks = [{"chunk_id": 0, "start": 0, "end": len(full_text), "text": full_text}]
+        result = merge_chunk_extractions(
+            [{"变更后总金额": "356.80", "质保期": "自最终验收通过之日起 24 个月", "甲方联系人": "沈清河，电话 0512-66881234"}],
+            chunks,
+            ["变更后总金额", "质保期", "甲方联系人"],
+            full_text,
+        )
+
+        self.assertEqual(result["变更后总金额"], "3568000.00")
+        self.assertEqual(result["质保期"], "24 个月")
+        self.assertEqual(result["甲方联系人"], "沈清河")
+        self.assertEqual(result["_meta"]["evidence"]["变更后总金额"]["strategy"], "label_regex_override")
 
     def test_conflict_lowers_confidence(self) -> None:
         chunks = [

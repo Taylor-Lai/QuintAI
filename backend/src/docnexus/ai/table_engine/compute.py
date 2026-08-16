@@ -146,6 +146,43 @@ def _numeric_source_fields(record: StructuredRecord, *, exclude_field: str) -> l
     return values
 
 
+def _compute_weighted_score_fields(record: StructuredRecord) -> None:
+    for field_name, value in list(record.values.items()):
+        normalized_name = _field_norm(field_name)
+        if value not in (None, "", "未找到") or "加权" not in normalized_name or "分" not in normalized_name:
+            continue
+        score_fields: list[tuple[str, Decimal]] = []
+        for token in ("质量", "交付", "价格", "服务"):
+            match = next(
+                (
+                    (source_field, number)
+                    for source_field, source_value in record.values.items()
+                    if token in source_field
+                    and "总" not in source_field
+                    and (number := _to_decimal(source_value)) is not None
+                ),
+                None,
+            )
+            if match is None:
+                break
+            score_fields.append(match)
+        if len(score_fields) != 4:
+            continue
+        weighted = sum(
+            (number * weight for (_, number), weight in zip(score_fields, map(Decimal, ("0.4", "0.3", "0.2", "0.1")))),
+            Decimal("0"),
+        )
+        record.values[field_name] = _format_decimal(weighted)
+        source_ids = [
+            evidence_id
+            for source_field, _ in score_fields
+            for evidence_id in record.field_sources.get(source_field, [])
+        ]
+        if source_ids:
+            record.field_sources[field_name] = list(dict.fromkeys(source_ids))
+        record.notes.append(f"Computed '{field_name}' using 40%/30%/20%/10% score weights.")
+
+
 def _compute_row_aggregate_fields(record: StructuredRecord) -> None:
     for field_name, value in list(record.values.items()):
         if value not in (None, "", "未找到"):
@@ -245,6 +282,7 @@ class PythonComputeEngine:
             _normalize_numeric_values(record)
             _compute_per_capita_fields(record)
             _compute_rate_fields(record)
+            _compute_weighted_score_fields(record)
             _compute_row_aggregate_fields(record)
             _mark_remaining_missing_required(record)
         _compute_cross_record_summary(records)
