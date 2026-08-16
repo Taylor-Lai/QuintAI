@@ -9,14 +9,11 @@ from dotenv import load_dotenv
 load_dotenv()
 
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "openai")
-ZHIPU_API_KEY = os.getenv("ZHIPU_API_KEY")
-ZHIPU_BASE_URL = os.getenv("ZHIPU_BASE_URL", "https://open.bigmodel.cn/api/paas/v4")
-ZHIPU_MODEL = os.getenv("ZHIPU_MODEL", "glm-4-flash")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL")
-OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
-LLM_TIMEOUT_SECONDS = float(os.getenv("LLM_TIMEOUT_SECONDS", "90"))
-LLM_MAX_RETRIES = int(os.getenv("LLM_MAX_RETRIES", "2"))
+OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL") or "https://dashscope.aliyuncs.com/compatible-mode/v1"
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "qwen3.8-max")
+LLM_TIMEOUT_SECONDS = float(os.getenv("LLM_TIMEOUT_SECONDS", "45"))
+LLM_MAX_RETRIES = int(os.getenv("LLM_MAX_RETRIES", "0"))
 LLM_CONCURRENCY = int(os.getenv("LLM_CONCURRENCY", "3"))
 LLM_CACHE_SIZE = int(os.getenv("LLM_CACHE_SIZE", "128"))
 LLM_MAX_CALLS_PER_RUN = int(os.getenv("LLM_MAX_CALLS_PER_RUN", "40"))
@@ -29,13 +26,7 @@ _llm_instance = None
 def get_chat_llm():
     global _llm_instance
     if _llm_instance is None:
-        if LLM_PROVIDER == "zhipu" and ZHIPU_API_KEY:
-            try:
-                from langchain_community.chat_models import ChatZhipuAI
-            except ImportError as exc:
-                raise ImportError("使用 zhipu 需要安装 langchain-community: pip install langchain-community") from exc
-            _llm_instance = ChatZhipuAI(model=ZHIPU_MODEL, api_key=ZHIPU_API_KEY, temperature=0)
-        elif OPENAI_API_KEY:
+        if OPENAI_API_KEY:
             try:
                 from langchain_openai import ChatOpenAI
             except ImportError as exc:
@@ -49,5 +40,5 @@ def get_chat_llm():
                 max_retries=LLM_MAX_RETRIES,
             )
         else:
-            raise ValueError("请在 .env 文件中配置 ZHIPU_API_KEY 或 OPENAI_API_KEY")
+            raise ValueError("请在 .env 文件中配置 OPENAI_API_KEY")
     return _llm_instance

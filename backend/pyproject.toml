@@ -11,8 +11,10 @@ requires-python = ">=3.11"
 license = "MIT"
 dependencies = [
   "alembic>=1.16,<2",
+  "bcrypt>=4.0.1,<4.1",
   "celery[redis]>=5.5,<6",
-  "fastapi>=0.135,<1",
+  "cryptography>=50,<51",
+  "fastapi>=0.141,<1",
   "langchain-core>=1.4,<2",
   "langchain-openai>=1.2,<2",
   "langgraph>=1.0,<2",
@@ -20,14 +22,15 @@ dependencies = [
   "openpyxl>=3.1,<4",
   "pandas>=3.0,<4",
   "passlib[bcrypt]>=1.7,<2",
-  "pydantic[email]>=2.12,<3",
+  "pydantic[email]>=2.13,<3",
   "python-docx>=1.2,<2",
   "python-dotenv>=1.2,<2",
-  "python-jose[cryptography]>=3.5,<4",
-  "python-multipart>=0.0.22,<1",
+  "PyJWT>=2.13,<3",
+  "python-multipart>=0.0.31,<1",
   "psycopg[binary]>=3.2,<4",
   "redis>=6,<7",
   "sqlalchemy>=2.0,<3",
+  "tabulate>=0.9,<1",
   "uvicorn[standard]>=0.41,<1",
 ]
 

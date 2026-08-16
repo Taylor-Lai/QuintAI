@@ -1,4 +1,5 @@
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -83,14 +84,17 @@ class FillRunReportTests(unittest.TestCase):
                     "rag_result": {"route": "rag"},
                 }
 
-            path = _write_fill_run_report(Path(tmp), "task-1", Result())
-            payload = json.loads(path.read_text(encoding="utf-8"))
-            path.unlink(missing_ok=True)
-            for parent in (path.parent, path.parent.parent):
-                try:
-                    parent.rmdir()
-                except OSError:
-                    pass
+            previous_data_dir = os.environ.get("DATA_DIR")
+            os.environ["DATA_DIR"] = str(Path(tmp) / "persistent-data")
+            try:
+                path = _write_fill_run_report(Path(tmp) / "workspace", "task-1", Result())
+                payload = json.loads(path.read_text(encoding="utf-8"))
+                self.assertEqual(path.parent, Path(tmp) / "persistent-data" / "reports" / "table_fill")
+            finally:
+                if previous_data_dir is None:
+                    os.environ.pop("DATA_DIR", None)
+                else:
+                    os.environ["DATA_DIR"] = previous_data_dir
 
         self.assertEqual(payload["task_id"], "task-1")
         self.assertEqual(payload["verification_status"], "warning")

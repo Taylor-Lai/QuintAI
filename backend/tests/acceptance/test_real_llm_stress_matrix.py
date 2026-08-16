@@ -56,9 +56,6 @@ except Exception as exc:  # pragma: no cover
 
 
 def _has_real_llm_config() -> bool:
-    provider = os.getenv("LLM_PROVIDER", "zhipu").lower()
-    if provider == "zhipu":
-        return bool(os.getenv("ZHIPU_API_KEY"))
     return bool(os.getenv("OPENAI_API_KEY"))
 
 

@@ -1,7 +1,6 @@
 """Contract tests for the public HTTP surface."""
 
 from docnexus.main import app
-from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 
 UNPREFIXED_API_ROUTES = {
@@ -107,12 +106,12 @@ EXPECTED_ROUTES = {(method, f"/api{path}") for method, path in UNPREFIXED_API_RO
 
 
 def test_public_route_contract_is_exact() -> None:
+    schema = app.openapi()
     actual = {
-        (method, route.path)
-        for route in app.routes
-        if isinstance(route, APIRoute) and route.include_in_schema
-        for method in route.methods
-        if method not in {"HEAD", "OPTIONS"}
+        (method.upper(), path)
+        for path, operations in schema["paths"].items()
+        for method in operations
+        if method.upper() not in {"HEAD", "OPTIONS", "PARAMETERS"}
     }
     assert actual == EXPECTED_ROUTES
 

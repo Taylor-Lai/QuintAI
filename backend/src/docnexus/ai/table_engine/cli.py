@@ -69,12 +69,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     run_parser.add_argument(
         "--llm-model",
-        default="gpt-4o-mini",
+        default="qwen3.8-max",
         help="Model name for OpenAI-compatible LLM skill execution.",
     )
     run_parser.add_argument(
         "--llm-base-url",
-        default=None,
+        default="https://dashscope.aliyuncs.com/compatible-mode/v1",
         help="Base URL for an OpenAI-compatible API endpoint.",
     )
     run_parser.add_argument(

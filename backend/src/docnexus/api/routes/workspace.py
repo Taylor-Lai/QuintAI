@@ -225,7 +225,7 @@ def create_demo_run(db: Session = Depends(get_db), user: User = Depends(get_curr
         user_id=user.id,
         organization_id=context.organization.id,
         name=f"项目立项信息提取演示-{demo_id[:6]}",
-        description="系统生成的可追溯信息提取演示，可在执行中心查看真实节点、证据与质量报告。",
+        description="系统生成的可追溯信息提取演示，可在执行中心查看处理步骤、证据与质量报告。",
         status="active",
         nodes=[
             {"id": "receive", "type": "receive", "name": "接收项目材料"},

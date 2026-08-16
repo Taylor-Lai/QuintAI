@@ -37,6 +37,8 @@ android-app/.kotlin/
 android-app/keystore.properties
 *.jks
 *.keystore
+*.apk
+*.apk
 
 # Runtime state
 *.db

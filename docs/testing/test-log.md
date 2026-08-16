@@ -6,14 +6,29 @@
 
 | 范围 | 最近有效结果 | 状态 |
 | --- | --- | --- |
-| Python 非真实模型回归 | 207 passed、8 deselected；Ruff、Mypy、compileall 通过 | 通过 |
+| Python 非真实模型回归 | 208 passed、8 deselected；Ruff、Mypy、compileall 通过 | 通过 |
 | 表格引擎确定性评估 | 3/3 | 通过 |
-| Web lint / unit / build / E2E | 0 errors；12/12；通过；4/4 | 通过 |
-| 真实材料 API 验收 | 既有材料 15/15；新增客户场景 6/6 | 通过 |
+| Web lint / unit / build / E2E | 0 errors；14/14；通过；4/4 | 通过 |
+| 真实材料 API 验收 | 既有材料 15/15；当前候选镜像新增客户场景 6/6 | 通过 |
 | Android 回归 | 3 项单元测试、Lint、Debug 构建通过 | 通过 |
 | DOCX 页面级渲染 | 未执行，缺少 LibreOffice/soffice；结构与格式快照已通过 | 受阻 |
 
-当前版本的最近一次检查见 `WT-20260814-01`。
+当前版本的最近一次检查见 `WT-20260817-01`。
+
+## WT-20260817-01：Qwen 交付候选版本复核
+
+- 模型配置统一为阿里云 DashScope OpenAI-compatible 接口和 `qwen3.8-max`；本地 `.env` 不纳入版本库；
+- Python：Ruff、Mypy 49 个源码文件、compileall、208 项非真实模型测试和表格引擎确定性评估 3/3 通过，覆盖率 71.74%；
+- 运行依赖重新生成最小锁文件，删除未使用的模型与向量库依赖；`pip-audit` 报告 0 项已知漏洞；
+- Web：lint 0 warnings/0 errors，14/14 单元测试，生产构建、生产依赖审计和桌面/移动 Playwright 4/4 通过；
+- Android：Android Studio JBR 21 环境下 3 项单元测试、Lint 和 Debug APK 构建通过；本轮未修改 Android 源码；
+- 最终 Debug APK 大小为 20,452,414 字节，SHA-256 为 `96f069de36f72d48fc273cd58f25a2fa8a0d1ca0775003585fe5b89e31cfeaec`；APK 作为本地交付产物保留，不纳入源码版本库；
+- Docker：Nginx、API、Worker、Scheduler、PostgreSQL、Redis 已按候选镜像重建；就绪检查、真实注册、登录和持久化数据卷验证通过；
+- 使用当前候选镜像和新测试账号，按注册、登录、上传、异步处理、进度轮询、下载、严格比较的完整流程执行新增客户材料；`qwen3.8-max` 任务 6/6、严格比较 6/6，总耗时 103.061 秒；
+- 分项耗时：Word 编辑 1.144/1.034 秒，信息提取 14.143/7.086 秒，表格填充 78.618/1.036 秒；
+- 两份表格质量报告均为 `pass`，写入单元格证据覆盖分别为 12/12 和 21/21；Worker 重启后报告仍存在于持久化数据卷；
+- 原始 `results.json` 的 SHA-256 为 `36db911d9d069fb54c49f314df411df92b74c38f340b36292a5a9dc69e4cb7ea`；运行产物按交付清理要求不纳入源码；
+- 结论：本地源码、生产镜像、三项核心业务和文件交付闭环达到本次交付门禁。公网生产环境和实体 Android 设备仍须在各自目标环境独立验收。
 
 ## WT-20260814-01：最终客户级验收
 

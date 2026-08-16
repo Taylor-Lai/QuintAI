@@ -12,7 +12,7 @@ from docnexus.db import SessionLocal, TaskEvent, TaskRecord, WorkflowRun
 TASK_STEP_TOTALS = {
     "document_edit": 4,
     "document_extract": 5,
-    "table_fill": 8,
+    "table_fill": 12,
 }
 
 

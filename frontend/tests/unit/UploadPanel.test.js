@@ -56,4 +56,22 @@ describe('UploadPanel extraction result', () => {
     expect(container.querySelector('.progress-steps')?.textContent).toContain('完成交付')
     expect(container.textContent).not.toContain('真实节点')
   })
+
+  it('shows every real table filling stage in execution order', async () => {
+    app.unmount()
+    app = createApp(UploadPanel, { type: 'table-fill' })
+    app.mount(container)
+    setupState = app._instance.setupState
+    setupState.loading = true
+    setupState.completedSteps = 7
+    setupState.totalSteps = 12
+    await nextTick()
+
+    const steps = container.querySelector('.progress-steps')?.textContent || ''
+    expect(container.querySelector('.progress-meta')?.textContent).toContain('处理步骤 8 / 12')
+    expect(steps).toContain('准备任务')
+    expect(steps).toContain('计算并写入')
+    expect(steps).toContain('生成报告')
+    expect(steps).toContain('完成交付')
+  })
 })

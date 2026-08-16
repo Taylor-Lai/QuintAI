@@ -18,7 +18,7 @@ Windows 项目路径建议使用纯 ASCII 字符。Android Gradle Plugin 已允�
 Copy-Item .env.example .env
 ```
 
-至少须替换 `SECRET_KEY`。启用真实模型服务时，还需配置 `LLM_PROVIDER`、`OPENAI_API_KEY`、`OPENAI_BASE_URL` 与 `OPENAI_MODEL`。示例文件不预设具体模型名称，实际配置应以供应商当前提供的模型为准。Docker 服务需要通过宿主机代理访问模型时，使用 `CONTAINER_HTTP_PROXY` / `CONTAINER_HTTPS_PROXY` 并填写容器可访问的地址（Windows Docker Desktop 通常为 `http://host.docker.internal:<port>`），不能填写宿主机 `127.0.0.1`。`.env`、发布签名及任何真实密钥均不得提交至版本库。
+至少须替换 `SECRET_KEY`。启用真实模型服务时，还需配置 `LLM_PROVIDER`、`OPENAI_API_KEY`、`OPENAI_BASE_URL` 与 `OPENAI_MODEL`；项目默认使用阿里云百炼兼容接口上的 `qwen3.8-max`。Docker 服务需要通过宿主机代理访问模型时，使用 `CONTAINER_HTTP_PROXY` / `CONTAINER_HTTPS_PROXY` 并填写容器可访问的地址（Windows Docker Desktop 通常为 `http://host.docker.internal:<port>`），不能填写宿主机 `127.0.0.1`。`.env`、发布签名及任何真实密钥均不得提交至版本库。
 
 ## 方式一：Docker Compose
 

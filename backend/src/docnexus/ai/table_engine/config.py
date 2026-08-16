@@ -29,11 +29,11 @@ class AppConfig:
     skills_root: str = field(default_factory=lambda: _PACKAGE_SKILLS_ROOT)
     enable_llm_skill_execution: bool = False
     llm_provider: str = "openai"
-    llm_model: str = "gpt-4o-mini"
-    llm_base_url: str | None = None
+    llm_model: str = "qwen3.8-max"
+    llm_base_url: str | None = "https://dashscope.aliyuncs.com/compatible-mode/v1"
     llm_api_key_env: str = "OPENAI_API_KEY"
-    llm_timeout_seconds: float = 90.0
-    llm_max_retries: int = 2
+    llm_timeout_seconds: float = 45.0
+    llm_max_retries: int = 0
     llm_concurrency: int = 3
     llm_cache_size: int = 128
     llm_max_calls_per_run: int = 40

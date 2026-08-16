@@ -24,10 +24,25 @@ def mime(path: Path) -> str:
 
 def wait_for_task(client: httpx.Client, task_id: str, timeout: int) -> dict[str, Any]:
     deadline = time.monotonic() + timeout
+    last_snapshot: tuple[str, int, int, int, str] | None = None
+    next_heartbeat = 0.0
     while time.monotonic() < deadline:
         response = client.get(f"/tasks/{task_id}")
         response.raise_for_status()
         task = response.json()
+        snapshot = (
+            str(task.get("status") or "unknown"),
+            int(task.get("progress") or 0),
+            int(task.get("completed_steps") or 0),
+            int(task.get("total_steps") or 1),
+            str(task.get("stage") or "等待执行"),
+        )
+        now = time.monotonic()
+        if snapshot != last_snapshot or now >= next_heartbeat:
+            status, progress, completed, total, stage = snapshot
+            print(f"  [{status}] {progress}% · 步骤 {completed}/{total} · {stage}", flush=True)
+            last_snapshot = snapshot
+            next_heartbeat = now + 15
         if task.get("status") in {"succeeded", "failed", "cancelled"}:
             return task
         time.sleep(1)

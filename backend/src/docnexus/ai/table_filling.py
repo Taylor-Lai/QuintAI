@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from datetime import datetime
 from pathlib import Path
 from typing import Callable
@@ -19,8 +20,6 @@ from docnexus.ai.llm import (
     OPENAI_BASE_URL,
     OPENAI_MODEL,
     TABLE_REPAIR_MAX_ATTEMPTS,
-    ZHIPU_BASE_URL,
-    ZHIPU_MODEL,
 )
 from docnexus.ai.table_engine.app import build_orchestrator
 from docnexus.ai.table_engine.cli import discover_assets
@@ -38,8 +37,8 @@ def _schema_classes():
 
 
 def _write_fill_run_report(work_dir: Path, task_id: str, result) -> Path:
-    """Persist a traceability report outside the temporary upload workspace."""
-    report_dir = Path.cwd() / "reports" / "table_fill"
+    """Persist a traceability report in the configured persistent data directory."""
+    report_dir = Path(os.getenv("DATA_DIR", "data")) / "reports" / "table_fill"
     report_dir.mkdir(parents=True, exist_ok=True)
     report_path = report_dir / f"{task_id}-fill-run-report.json"
 
@@ -137,9 +136,9 @@ def handle_table_filling(
             progress_callback("prepare", "running", "正在初始化多智能体任务", 0, 12)
 
         llm_provider = LLM_PROVIDER
-        llm_model = ZHIPU_MODEL if llm_provider == "zhipu" else OPENAI_MODEL
-        llm_api_key_env = "ZHIPU_API_KEY" if llm_provider == "zhipu" else "OPENAI_API_KEY"
-        llm_base_url = ZHIPU_BASE_URL if llm_provider == "zhipu" else OPENAI_BASE_URL
+        llm_model = OPENAI_MODEL
+        llm_api_key_env = "OPENAI_API_KEY"
+        llm_base_url = OPENAI_BASE_URL
 
         config = AppConfig(
             enable_agent_runtime=True,

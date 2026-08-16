@@ -180,7 +180,7 @@ def test_task_progress_reset_and_missing_task_paths(tmp_path, monkeypatch) -> No
             status="running",
             progress=50,
             completed_steps=6,
-            total_steps=8,
+            total_steps=12,
         )
         db.add(task)
         db.commit()
@@ -191,7 +191,7 @@ def test_task_progress_reset_and_missing_task_paths(tmp_path, monkeypatch) -> No
     task_progress.reset_progress("task-progress")
     with factory() as db:
         task = db.get(TaskRecord, "task-progress")
-        assert (task.progress, task.completed_steps, task.total_steps) == (0, 0, 8)
+        assert (task.progress, task.completed_steps, task.total_steps) == (0, 0, 12)
     assert task_progress.serialize_events("task-progress") == []
     engine.dispose()
 

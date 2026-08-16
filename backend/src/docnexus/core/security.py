@@ -4,7 +4,8 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from jose import JWTError, jwt
+import jwt
+from jwt import InvalidTokenError
 from passlib.context import CryptContext
 
 from docnexus.core.settings import get_settings
@@ -41,5 +42,5 @@ class AuthService:
                 get_settings().require_secret_key(),
                 algorithms=[ALGORITHM],
             )
-        except (JWTError, RuntimeError):
+        except (InvalidTokenError, RuntimeError):
             return None
